@@ -12,7 +12,7 @@ z `homeassistant`, což hlídá test.
 |---|---|---|
 | [Kodi/](../Kodi/CLAUDE.md) | `lib/` | doplněk pro Kodi; logiku enginu má rozpuštěnou v `default.py` |
 | [HA/](../HA/CLAUDE.md) | `lib/` + `engine.py` | integrace pro Home Assistant |
-| [Stremio/](../Stremio/CLAUDE.md) | vše | doplněk pro Stremio, teprve vzniká |
+| [Stremio/](../Stremio/CLAUDE.md) | vše | doplněk pro Stremio |
 
 ## Pravidlo
 
