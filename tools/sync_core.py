@@ -10,8 +10,9 @@ Doplněk pro Kodi načítá `resources/lib` ploše přes `sys.path`, ne jako bal
 takže se mu relativní importy při zápisu zplošťují (`from .store` → `from store`).
 Ostatní cíle berou soubory tak, jak jsou.
 
-Cesty cílů jsou relativní k tomuhle repu a počítají s rozložením v `AAA_CLAUDE/`.
-Cíl, který na disku není, se přeskočí — doplněk pro Stremio zatím neexistuje.
+Cesty cílů jsou relativní k tomuhle repu: všechny větve rodiny leží vedle něj
+v `Nastroje/Nokturno/`. Cíl, který na disku není, se přeskočí — doplněk pro
+Stremio zatím neexistuje.
 """
 import argparse
 import difflib
@@ -42,13 +43,13 @@ class Target:
 
 
 TARGETS = [
-    Target("kodi", "../plugin.video.nokturno/resources/lib",
+    Target("kodi", "../Kodi/plugin.video.nokturno/resources/lib",
            engine=False, flatten=True,
            note="logiku enginu má rozpuštěnou v default.py, bere jen knihovnu"),
-    Target("ha", "../../../HA/Nokturno HA/nokturno-ha/custom_components/nokturno",
+    Target("ha", "../HA/nokturno-ha/custom_components/nokturno",
            engine=True, flatten=False,
            note="vlastní const.py si drží sám, jádro mu dodá lib/const.py"),
-    Target("stremio", "../../Nokturno Stremio/nokturno-stremio/nokturno/core",
+    Target("stremio", "../Stremio/nokturno-stremio/nokturno/core",
            engine=True, flatten=False, package=True,
            note="zatím neexistuje"),
 ]
