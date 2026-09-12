@@ -41,6 +41,15 @@ class Target:
         """Kam přijdou moduly z `nokturno_core/lib/`."""
         return self.path if self.flatten else self.path / "lib"
 
+    @property
+    def repo(self):
+        """Kořen repa konzumenta — cíl leží u všech tří dvě úrovně pod ním."""
+        return self.path.parent.parent
+
+    def missing(self):
+        """Chybí celý projekt? Samotná cílová složka se při zápisu vytvoří."""
+        return not self.repo.exists()
+
 
 TARGETS = [
     Target("kodi", "../Kodi/plugin.video.nokturno/resources/lib",
@@ -95,8 +104,8 @@ def main():
 
     total = 0
     for target in chosen:
-        if not target.path.exists():
-            print(f"\n{target.name}: přeskočeno, {target.path} neexistuje ({target.note})")
+        if target.missing():
+            print(f"\n{target.name}: přeskočeno, {target.repo} neexistuje ({target.note})")
             continue
         print(f"\n{target.name}: {target.path}")
         jobs = plan(target)
