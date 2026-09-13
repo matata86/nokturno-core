@@ -173,5 +173,15 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             streams.parse_stream(s)
         self.assertEqual(len(Engine._merge_direct(direct)), 30)
 
+    def test_prisny_filtr_s_kratkym_slovem_v_nazvu(self):
+        """„Harry Potter a Kámen mudrců": krátké „a" nesmí shodit přesnou shodu."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            _dotazy, relevant = engine._title_queries(
+                {"name": "Harry Potter a Kámen mudrců", "year": 2001}, None, "movie", None, True)
+            self.assertTrue(relevant("Harry.Potter.a.Kámen.mudrců.(2001) CZ DABING"))
+            self.assertTrue(relevant("Harry Potter a Kamen mudrcu (2001) (prodlouzena verze)"))
+            self.assertFalse(relevant("Harry Potter a Tajemná komnata (2002)"))
+
 if __name__ == "__main__":
     unittest.main()
