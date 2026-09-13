@@ -19,6 +19,7 @@ výsledek hledání měl (klienti je jednou zalogují, ať se to dá dohledat).
 """
 import hashlib
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -81,6 +82,45 @@ def _size(item):
     return 0
 
 
+CHANNEL_COUNTS = {1: "1.0", 2: "2.0", 3: "2.1", 4: "4.0", 5: "5.0", 6: "5.1", 7: "6.1", 8: "7.1"}
+
+
+def _channels(value):
+    """Počet kanálů zvuku → „5.1". API ho může poslat jako počet stop (6) i jako text („5.1")."""
+    try:
+        num = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return ""
+    if num <= 0:
+        return ""
+    return CHANNEL_COUNTS.get(int(num), "") if num.is_integer() else f"{num:.1f}"
+
+
+def _resolution(value):
+    """„1920x1080" / „1080p" / 1080 → (šířka, výška)."""
+    text = str(value or "")
+    m = re.search(r"(\d{3,4})\s*[x×]\s*(\d{3,4})", text)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = re.search(r"(\d{3,4})", text)
+    return (0, int(m.group(1))) if m else (0, 0)
+
+
+def media(video):
+    """Stopy a rozlišení z údajů API — stejný tvar jako `mediainfo.probe()`, takže je
+    jádro i klienti použijí jako přečtenou hlavičku a soubor se číst nemusí.
+    Jazyk stopy API neříká, stopa je proto bez jazyka."""
+    channels = _channels(video.get("audio_channels"))
+    codec = str(video.get("audio_codec") or "").strip().upper()[:12]
+    width, height = _resolution(video.get("resolution"))
+    return {
+        "audio": [{"lang": "", "channels": channels, "codec": codec}] if channels or codec else [],
+        "subs": [],
+        "width": width,
+        "height": height,
+    }
+
+
 def normalize(item):
     """Výsledek hledání do tvaru, se kterým pracuje jádro (jako u HellSpy)."""
     video = item.get("video") or {}
@@ -96,6 +136,7 @@ def normalize(item):
         "quality": quality,
         "subtitles": subs,
         "thumb": (video.get("thumb_urls") or [""])[0],
+        "media": media(video),
     }
 
 
@@ -107,6 +148,8 @@ class SledujtetoApi:
         self.cache_ttl = cache_ttl
         self._token = None
         self.last_keys = []
+        self.last_me_keys = []
+        self.last_sample = {}
 
     # --- síť ----------------------------------------------------------------
     def _request(self, method, path, data=None, token=None):
@@ -186,7 +229,24 @@ class SledujtetoApi:
 
     # --- rozhraní -----------------------------------------------------------
     def me(self):
-        return ((self._authed("GET", "v1/me").get("data") or {}).get("user")) or {}
+        data = self._authed("GET", "v1/me").get("data") or {}
+        user = data.get("user") or {}
+        # jaké údaje o účtu API posílá (jen názvy, ne hodnoty) — hledá se v nich
+        # konec Premium pro upozornění jako u WebShare; oficiální doplněk čte jen is_premium
+        self.last_me_keys = sorted({"data." + k for k in data} | {"user." + k for k in user})
+        sub = user.get("subscription")
+        if isinstance(sub, dict):
+            # tvar předplatného pro upozornění na konec Premium: názvy polí a u dat,
+            # čísel a přepínačů i hodnota (nic osobního — e-mail a jméno sem nejdou)
+            def ukazka(value):
+                if isinstance(value, (bool, int, float)) or value is None:
+                    return value
+                text = str(value)
+                return text if any(ch.isdigit() for ch in text) and len(text) <= 40 else type(value).__name__
+            self.last_me_keys.append("subscription=" + repr({k: ukazka(v) for k, v in sorted(sub.items())}))
+        elif sub is not None:
+            self.last_me_keys.append(f"subscription=<{type(sub).__name__}> {str(sub)[:40]}")
+        return user
 
     def search(self, query, limit=25, offset=0):
         def load():
@@ -196,6 +256,12 @@ class SledujtetoApi:
             if results and isinstance(results[0], dict):
                 first = results[0]
                 self.last_keys = sorted(set(first) | {"video." + k for k in (first.get("video") or {})})
+                # ukázka technických údajů (rozlišení, kodeky, kanály) — formát jejich
+                # doplněk nepoužívá a z dokumentace ho neznáme; žádné odkazy ani popis
+                video = first.get("video") or {}
+                self.last_sample = {k: v for k, v in video.items()
+                                    if k not in ("thumb_urls", "subtitles") and not isinstance(v, (dict, list))}
+                self.last_sample["filesize"] = first.get("filesize")
             files = [normalize(r) for r in results if isinstance(r, dict) and r.get("id")]
             return files, int(inner.get("total") or len(files))
         if self.cache is None:

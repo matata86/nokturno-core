@@ -156,7 +156,7 @@ class WebshareApi:
             return load()
         # klíč jen z parametrů dotazu — token se obnovuje při přihlášení, ale
         # stejný dotaz má vracet totéž bez ohledu na to, kterým tokenem se ptal
-        key = f"ws:search:{what}:{sort}:{limit}:{offset}"
+        key = f"ws:search2:{what}:{sort}:{limit}:{offset}"  # 2 = názvy bez koncovky z cizího písma
         return self.cache.cached(key, self.cache_ttl, load)
 
     def account_status(self):

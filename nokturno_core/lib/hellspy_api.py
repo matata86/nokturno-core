@@ -84,7 +84,7 @@ class HellspyApi:
             return files, int(data.get("nextOffset") or 0)
         if self.cache is None:
             return load()
-        return self.cache.cached(f"hs:search:{what}:{limit}:{offset}", self.cache_ttl, load)
+        return self.cache.cached(f"hs:search2:{what}:{limit}:{offset}", self.cache_ttl, load)
 
     def file_link(self, file_id, file_hash):
         """Podepsaný odkaz na původní soubor. Vytažený z hlavičky přesměrování."""
