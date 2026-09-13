@@ -580,5 +580,31 @@ class TestSkrytyDalsiDil(unittest.TestCase):
             self.assertEqual(collect_changes(s, 0)["next_hidden"], {})
 
 
+class TestTmdbKatalogy(unittest.TestCase):
+    """Sjednocené menu Filmy/Seriály počítá s katalogy trendů a roku z TMDB."""
+
+    def test_trendy_a_rok_bez_site(self):
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        volani = []
+
+        class Api(TmdbApi):
+            def _get(self, path, **params):
+                volani.append((path, params))
+                if path.startswith("/genre/"):
+                    return {"genres": [{"id": 35, "name": "Komedie"}]}
+                return {"results": []}
+
+        api = Api("klic")
+        ids = [c["id"] for c in api.catalogs("movie")]
+        self.assertEqual(ids, ["popular", "top_rated", "trending", "year"])
+        rok = next(c for c in api.catalogs("series") if c["id"] == "year")
+        self.assertTrue(rok["genre_required"])
+        self.assertEqual(rok["genres"][-1], "1920")
+        api.catalog("movie", "trending")
+        api.catalog("series", "year", genre="1996")
+        self.assertIn(("/trending/movie/week", {"page": 1}), volani)
+        self.assertTrue(any(p == "/discover/tv" and q.get("first_air_date_year") == "1996" for p, q in volani))
+
+
 if __name__ == "__main__":
     unittest.main()
