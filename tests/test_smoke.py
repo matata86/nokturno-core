@@ -183,5 +183,41 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             self.assertTrue(relevant("Harry Potter a Kamen mudrcu (2001) (prodlouzena verze)"))
             self.assertFalse(relevant("Harry Potter a Tajemná komnata (2002)"))
 
+    def _relevant(self, name, year, orig=""):
+        with tempfile.TemporaryDirectory() as tmp:
+            return Engine({}, tmp)._title_queries({"name": name, "year": year, "_orig": orig},
+                                                None, "movie", None, True)[1]
+
+    def test_kratky_nazev_neprojde_uprostred_jineho(self):
+        """„To" (2017) dřív nemělo filtr slov vůbec — prošlo cokoli bez roku."""
+        relevant = self._relevant("To", 2017, "It")
+        self.assertTrue(relevant("To.2017.1080p.CZ.dabing.mkv"))
+        self.assertTrue(relevant("To (2017) CZ"))
+        self.assertTrue(relevant("To - It (2017) CZ Dabing"), "dvojí název titulu")
+        for jine in ("What Happened to Monday (2017)", "Někdo to rád horké", "Jumanji 2017",
+                     "Tora! Tora! Tora!", "To Kapitola 2"):
+            self.assertFalse(relevant(jine), jine)
+
+    def test_pokracovani_neprojde(self):
+        relevant = self._relevant("Jak vycvičit draka", 2010)
+        self.assertTrue(relevant("Jak vycvičit draka (2010) CZ 5.1"))
+        self.assertTrue(relevant("Jak.vycvicit.draka.5.1.CZ.mkv"), "zvuk 5.1 není díl")
+        for jine in ("Jak vycvičit draka 2", "Jak.vycvicit.draka.3.CZ", "Jak_vycvicit_draka_2_2014"):
+            self.assertFalse(relevant(jine), jine)
+        padouch = self._relevant("Já, padouch", 2010)
+        self.assertFalse(padouch("Despicable.Me.2.Puppy.mkv"))
+        self.assertFalse(padouch("Ja padouch II"))
+
+    def test_cislo_dilu_v_nazvu_titulu(self):
+        relevant = self._relevant("Toy Story 5", 2026)
+        self.assertTrue(relevant("Toy.Story.5.2026.1080p"))
+        self.assertFalse(relevant("Toy Story 2"))
+
+    def test_rok_za_podtrzitkem(self):
+        relevant = self._relevant("Jak vycvičit draka", 2010)
+        self.assertFalse(relevant("Jak_vycvicit_draka_2025"))
+        self.assertTrue(relevant("Jak_vycvicit_draka_2010_CZ"))
+
+
 if __name__ == "__main__":
     unittest.main()
