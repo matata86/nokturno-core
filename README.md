@@ -1,6 +1,6 @@
 # nokturno-core
 
-Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Luně
+Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, Luně
 a na trackerech přes Prowlarr — bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
