@@ -80,7 +80,14 @@ class Dav(BaseHTTPRequestHandler):
         if not self._auth():
             return
         path = urllib.parse.unquote(self.path)
-        if path.endswith("/"):
+        if path == "/dav/.nokturno-rev":
+            if self.server.rev is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = self.server.rev.encode()
+        elif path.endswith("/"):
             links = "".join(f'<a href="{urllib.parse.quote(n)}{"/" if d else ""}">{n}</a>'
                             for n, d, _s in STROM.get(path, []))
             body = f'<a href="?C=N;O=D">Name</a><a href="../">Parent</a>{links}'.encode()
@@ -98,6 +105,7 @@ class Server:
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Dav)
         self.httpd.html_only = False
         self.httpd.last_range = None
+        self.httpd.rev = None
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/dav/"
         return self
@@ -169,6 +177,20 @@ class TestProchazeni(unittest.TestCase):
             found, total = api.search("sherlock s01e03")
             self.assertEqual((total, found[0]["name"]), (1, "S01E03.mkv"))
             self.assertEqual(api.search("matrix")[1], 2)
+
+    def test_znacka_zmeny_vynuti_nove_prochazeni(self):
+        from nokturno_core.lib.store import Store
+        with Server() as srv:
+            api = StorageApi(srv.url, "nokturno", "tajne", cache=Store(tempfile.mkdtemp()))
+            self.assertEqual(len(api.files()), 5)
+            STROM["/dav/Filmy/"].append(("Novy.Film.2026.mkv", False, 1))
+            try:
+                self.assertEqual(len(api.files()), 5, "bez značky platí hodinová paměť")
+                srv.httpd.rev = "1789300000.5"
+                self.assertEqual(len(api.files()), 6, "nová značka = nové procházení")
+                self.assertEqual(api.revision(), "1789300000.5")
+            finally:
+                STROM["/dav/Filmy/"].pop()
 
     def test_hlavicka_souboru_se_cte_s_heslem(self):
         with Server() as srv:
