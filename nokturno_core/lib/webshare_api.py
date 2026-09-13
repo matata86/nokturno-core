@@ -12,6 +12,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from .streams import clean_file_name
+
 API = "https://webshare.cz/api/"
 TIMEOUT = 40
 ITOA64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -140,7 +142,7 @@ class WebshareApi:
             for f in root.findall("file"):
                 files.append({
                     "ident": f.findtext("ident"),
-                    "name": f.findtext("name") or "",
+                    "name": clean_file_name(f.findtext("name") or ""),
                     "type": f.findtext("type") or "",
                     "img": f.findtext("img") or "",
                     "size": int(f.findtext("size") or 0),

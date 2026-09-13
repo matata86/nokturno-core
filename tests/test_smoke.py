@@ -536,5 +536,21 @@ class TestCeskyNazevZWikidat(unittest.TestCase):
             modul.local_titles, modul._cinemeta = puvodni_wd, puvodni_cm
 
 
+
+class TestKoncovkaNazvu(unittest.TestCase):
+    def test_orizne_znak_z_ciziho_pisma(self):
+        from nokturno_core.lib.streams import clean_file_name
+        for dirty in ("Harry Potter A Ohnivý Pohár 2005 UHD CZ  ᚠ", "Harry Potter A Ohnivý Pohár 2005 UHD CZ (ሐ)",
+                      "Harry Potter A Ohnivý Pohár 2005 UHD CZ  ก", "Harry Potter A Ohnivý Pohár 2005 UHD CZ (ア)",
+                      "Harry Potter A Ohnivý Pohár 2005 UHD CZ  (Ⲁ)", "Harry Potter A Ohnivý Pohár 2005 UHD CZ (α)"):
+            self.assertEqual(clean_file_name(dirty), "Harry Potter A Ohnivý Pohár 2005 UHD CZ", dirty)
+
+    def test_skutecny_nazev_necha(self):
+        from nokturno_core.lib.streams import clean_file_name
+        for clean in ("Harry Potter A Ohnivý Pohár 2005 UHD CZ", "Matrix (1999) CZ", "Film 2020 CZ (HDR10)",
+                      "Pelíšky 1999", "Pí (1998)", "Жмурки 2005", "Toy Story 5 (2026)", "Film CZ (ByDJ)", "Seriál S01E02 ž"):
+            self.assertEqual(clean_file_name(clean), clean, clean)
+
+
 if __name__ == "__main__":
     unittest.main()
