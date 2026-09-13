@@ -1,5 +1,7 @@
 # nokturno-core
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-podpo%C5%99%20autora-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/matata86) [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
+
 Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, Luně
 a na trackerech přes Prowlarr — bez vazby na hostitele.
 
@@ -60,3 +62,13 @@ jakékoli vazby na hostitele. Do té doby existovala knihovna jako dvě ruční 
 které se stihly rozejít v šesti souborech. Sloučení vzalo z každé větve to, co
 měla navíc: cachování a řazení z větve pro Kodi, ukazatel průběhu v `enrich`
 z větve pro Home Assistant.
+
+---
+
+## Podpora
+
+Pomohlo ti to? Kafe autorovi udělá radost ☕
+
+- **Ko-fi:** https://ko-fi.com/matata86
+- **PayPal:** https://paypal.me/matata86
+- **Bitcoin:** `bc1qhjwt8xxmuym0xsd50yfpvjph00386uz73gqwlc`
