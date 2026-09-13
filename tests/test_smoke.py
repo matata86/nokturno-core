@@ -46,7 +46,7 @@ class TestJadroJeSamostatne(unittest.TestCase):
             engine = Engine({}, tmp)
             self.assertEqual(engine.sources(),
                              {"luna": False, "sosac": False, "webshare": False,
-                              "hellspy": False, "sledujteto": False, "torrent": False})
+                              "hellspy": False, "sledujteto": False, "storage": False, "torrent": False})
 
     def test_rozpad_id_epizody(self):
         self.assertEqual(split_episode_id("tt0903747:2:5"), ("tt0903747", 2, 5))
