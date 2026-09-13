@@ -8,6 +8,7 @@ Nesahá na síť. Ověřuje jen tvar jádra a to, co na něm konzumenti vyžaduj
 tedy věci, které se při rozesílání dají tiše rozbít.
 """
 import ast
+import json
 import inspect
 import pathlib
 import sys
@@ -45,7 +46,7 @@ class TestJadroJeSamostatne(unittest.TestCase):
             engine = Engine({}, tmp)
             self.assertEqual(engine.sources(),
                              {"luna": False, "sosac": False, "webshare": False,
-                              "hellspy": False, "torrent": False})
+                              "hellspy": False, "sledujteto": False, "torrent": False})
 
     def test_rozpad_id_epizody(self):
         self.assertEqual(split_episode_id("tt0903747:2:5"), ("tt0903747", 2, 5))
@@ -62,6 +63,7 @@ class TestCoVyzadujeKodi(unittest.TestCase):
         "sosac_direct": ("EXPORT", "SosacDirect", "is_direct_id"),
         "enrich": ("enrich", "enrich_one"),
         "hellspy_api": ("HellspyApi", "HellspyError"),
+        "sledujteto_api": ("SledujtetoApi", "SledujtetoError"),
         "mediainfo": ("describe", "probe", "quality_from_size"),
         "store": ("Store", "migrate_profile"),
         "sync": ("sync_once",),
@@ -336,6 +338,132 @@ class TestPopisVypadku(unittest.TestCase):
         self.assertEqual(describe_failure("Luna", chyba), "Luna neodpovídá")
         self.assertEqual(describe_failure("WebShare", "login: Wrong password"), "WebShare: login: Wrong password")
         self.assertNotIn("tajny", describe_failure("Luna", "divná chyba https://x/e1.tajny/y"))
+
+
+
+class TestSledujteto(unittest.TestCase):
+    """Klient Sledujteto bez sítě — odpovědi API ve tvaru z jejich doplňku pro Kodi."""
+
+    def setUp(self):
+        from nokturno_core.lib import sledujteto_api as st
+        from nokturno_core.lib.store import Store
+        self.st = st
+        self.tmp = tempfile.mkdtemp()
+        self.store = Store(self.tmp)
+        self.calls = []
+        self._orig = st.urllib.request.urlopen
+
+    def tearDown(self):
+        self.st.urllib.request.urlopen = self._orig
+
+    def _server(self, handler):
+        import io, urllib.error
+        test = self
+
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(req, timeout=None):
+            auth = req.headers.get("Authorization", "")
+            test.calls.append((req.get_method(), req.full_url.split("/api/", 1)[1], auth))
+            status, body = handler(req.get_method(), req.full_url.split("/api/", 1)[1], auth,
+                                   json.loads(req.data) if req.data else None)
+            data = json.dumps(body).encode()
+            if status >= 400:
+                raise urllib.error.HTTPError(req.full_url, status, "err", {}, io.BytesIO(data))
+            return Resp(data)
+        self.st.urllib.request.urlopen = urlopen
+
+    VIDEO = {"id": 123, "name": "Matrix (1999) CZ dabing 1080p", "is_premium": False,
+             "video": {"is_hd": True, "is_4k": False, "duration": "2:16:17", "thumb_urls": ["https://x/t.jpg"],
+                       "subtitles": [{"url": "https://x/s.srt"}], "size": 4500000000}}
+
+    def test_prihlaseni_hledani_a_odkaz(self):
+        def handler(method, path, auth, body):
+            if path == "v1/token":
+                self.assertEqual(body, {"email": "a@b.cz", "password": "tajne"})
+                return 200, {"data": {"token": "T1", "expires": ""}}
+            self.assertEqual(auth, "Bearer T1")
+            if path.startswith("v1/videos"):
+                return 200, {"data": {"results": [self.VIDEO], "total": 1}}
+            if path == "v1/video/123/link":
+                return 200, {"data": {"link": "https://cdn/x.mp4", "id": 9}}
+            return 404, {}
+        self._server(handler)
+        api = self.st.SledujtetoApi("a@b.cz", "tajne", cache=self.store)
+        files, total = api.search("matrix")
+        self.assertEqual(total, 1)
+        f = files[0]
+        self.assertEqual((f["id"], f["quality"], f["duration"], f["size"]), ("123", "HD", 8177, 4500000000))
+        self.assertEqual(f["subtitles"], ["https://x/s.srt"])
+        self.assertIn("video.size", api.last_keys)
+        self.assertEqual(api.file_link("123"), "https://cdn/x.mp4")
+        # druhé jádro nad stejným úložištěm se znovu nepřihlašuje
+        api2 = self.st.SledujtetoApi("a@b.cz", "tajne", cache=self.store)
+        api2.file_link("123")
+        self.assertEqual(sum(1 for c in self.calls if c[1] == "v1/token"), 1)
+
+    def test_po_401_se_prihlasi_znovu(self):
+        tokens = iter(["STARY", "NOVY"])
+        def handler(method, path, auth, body):
+            if path == "v1/token":
+                return 200, {"data": {"token": next(tokens)}}
+            return (401, {"data": {"message": "Unauthorized"}}) if auth == "Bearer STARY" \
+                else (200, {"data": {"link": "https://cdn/y.mp4"}})
+        self._server(handler)
+        api = self.st.SledujtetoApi("a@b.cz", "tajne", cache=self.store)
+        self.assertEqual(api.file_link("5"), "https://cdn/y.mp4")
+
+    def test_bez_premium_srozumitelna_chyba(self):
+        def handler(method, path, auth, body):
+            if path == "v1/token":
+                return 200, {"data": {"token": "T"}}
+            return 403, {"data": {"message": "Forbidden"}}
+        self._server(handler)
+        with self.assertRaises(self.st.SledujtetoError) as ctx:
+            self.st.SledujtetoApi("a@b.cz", "tajne").file_link("1")
+        self.assertIn("Premium", str(ctx.exception))
+
+    def test_spatne_heslo(self):
+        self._server(lambda m, p, a, b: (401, {"data": {"errors": ["invalid_credentials"]}}))
+        with self.assertRaises(self.st.SledujtetoError) as ctx:
+            self.st.SledujtetoApi("a@b.cz", "spatne").search("x")
+        self.assertIn("e-mail a heslo", str(ctx.exception))
+        self.assertNotIn("spatne", str(ctx.exception))
+
+
+
+class TestSledujtetoVJadru(unittest.TestCase):
+    def test_streamy_filtr_a_prehrani(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"st_email": "a@b.cz", "st_password": "x"}, tmp)
+            self.assertTrue(engine.sources()["sledujteto"])
+
+            class Fake:
+                last_keys = ["id", "name", "video.size"]
+
+                def search(self, query, limit=25, offset=0):
+                    return ([{"id": "1", "name": "Matrix (1999) CZ dabing", "size_h": "4.00 GB",
+                              "quality": "HD", "duration": 8177, "subtitles": ["https://x/s.srt"]},
+                             {"id": "2", "name": "Matrix Reloaded (2003)", "size_h": "", "quality": ""}], 2)
+
+                def file_link(self, video_id):
+                    return f"https://cdn/{video_id}.mp4"
+
+            engine._st = Fake()
+            found = engine._sledujteto_streams({"name": "Matrix", "year": 1999}, None, "movie")
+            self.assertEqual([s["url"] for s in found], ["st:1"], "Reloaded je jiný titul")
+            self.assertEqual(found[0]["subtitles"], ["https://x/s.srt"])
+            self.assertEqual(engine.resolve("st:1"), "https://cdn/1.mp4")
+
+    def test_bez_hesla_neni_zdroj(self):
+        from nokturno_core import NokturnoError
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"st_email": "a@b.cz"}, tmp)
+            self.assertIsNone(engine.st)
+            with self.assertRaises(NokturnoError):
+                engine.resolve("st:1")
 
 
 if __name__ == "__main__":
