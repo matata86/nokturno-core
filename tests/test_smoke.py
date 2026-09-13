@@ -132,5 +132,33 @@ class TestKonstanty(unittest.TestCase):
         self.assertIn(const.DEFAULT_SORT, const.SORT_ORDERS)
 
 
+class TestStats(unittest.TestCase):
+    """`note_play`/`note_use` volají klienti (Kodi, HA) přes `hass.async_add_executor_job`
+    nebo přímo — výjimka uvnitř by se jinak potichu spolkla (klienti ji záměrně
+    nenechají spadnout celou odpověď) a zjistilo by se to až z chybějících dat
+    na Dashboardu. Skutečné volání přes `Stats` proto musí projít, ne se jen
+    zkontrolovat čtením zdrojáku."""
+
+    def setUp(self):
+        from nokturno_core.lib.stats import Stats
+        self.tmp = tempfile.mkdtemp()
+        self.stats = Stats(self.tmp)
+
+    def test_note_play_a_payload(self):
+        self.stats.note_use()
+        self.stats.note_play("tt0133093", "Matrix", 1999, "movie")
+        payload = self.stats.payload(version="1.0", platform="Linux")
+        plays = {p["key"]: p for p in payload["plays"]}
+        self.assertIn("tt0133093", plays)
+        self.assertEqual(plays["tt0133093"]["t"], "Matrix")
+        self.assertEqual(plays["tt0133093"]["y"], 1999)
+        self.assertIsInstance(plays["tt0133093"]["l"], int)
+
+    def test_note_play_bez_titulu_nespadne(self):
+        """`title=""`/`year=None` je běžný stav (dohledání meta selhalo) — nesmí to shodit."""
+        self.stats.note_play("sosacd_m_x")
+        self.assertIn("sosacd_m_x", self.stats.data["plays"])
+
+
 if __name__ == "__main__":
     unittest.main()
