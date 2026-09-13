@@ -157,6 +157,13 @@ class TestStats(unittest.TestCase):
         self.assertEqual(plays["tt0133093"]["y"], 1999)
         self.assertIsInstance(plays["tt0133093"]["l"], int)
 
+    def test_zdroje_a_produkt_v_hlaseni(self):
+        payload = self.stats.payload(version="3.0.0", sources=["webshare", "sledujteto", "", "webshare"],
+                                     product="stremio")
+        self.assertEqual(payload["sources"], ["sledujteto", "webshare"])
+        self.assertEqual(payload["product"], "stremio")
+        self.assertNotIn("sources", self.stats.payload(), "starší volání bez zdrojů je nepošle vůbec")
+
     def test_note_play_bez_titulu_nespadne(self):
         """`title=""`/`year=None` je běžný stav (dohledání meta selhalo) — nesmí to shodit."""
         self.stats.note_play("sosacd_m_x")
@@ -464,6 +471,27 @@ class TestSledujtetoVJadru(unittest.TestCase):
             self.assertIsNone(engine.st)
             with self.assertRaises(NokturnoError):
                 engine.resolve("st:1")
+
+
+
+class TestSledujtetoMedia(unittest.TestCase):
+    def test_kanaly_kodek_a_rozliseni_z_api(self):
+        from nokturno_core.lib.sledujteto_api import media
+        self.assertEqual(media({"audio_channels": 6, "audio_codec": "eac3", "resolution": "1920x1080"}),
+                         {"audio": [{"lang": "", "channels": "5.1", "codec": "EAC3"}], "subs": [],
+                          "width": 1920, "height": 1080})
+        self.assertEqual(media({"audio_channels": "2.0", "resolution": "720p"})["audio"][0]["channels"], "2.0")
+        self.assertEqual(media({"audio_channels": "5.1"})["audio"][0]["channels"], "5.1")
+        self.assertEqual(media({})["audio"], [])
+
+    def test_popis_nese_kodek(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            stream = {"label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB | Zvuk: CZ 5.1", "source": "ws",
+                      "url": "ws:x", "_direct": True, "_tracks": [{"lang": "CZ", "channels": "5.1", "codec": "AC3"}]}
+            popis = engine._describe(stream, 0)
+            self.assertEqual(popis["audio"], [{"lang": "CZ", "channels": "5.1", "codec": "AC3"}])
+            self.assertEqual(popis["channels"], {"CZ": "5.1"})
 
 
 if __name__ == "__main__":
