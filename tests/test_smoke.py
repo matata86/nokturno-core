@@ -265,6 +265,78 @@ class TestStoreSdilenyViceProcesy(unittest.TestCase):
         self.assertEqual(index.item("tt1")["title"], "film", "snímek přehraného titulu přes rejstřík")
         self.assertTrue(pathlib.Path(self.tmp, "sosac_index.json").exists())
 
+    def test_zalozeni_rejstriku_nesaha_na_disk(self):
+        """HA zakládá rejstřík z atributů senzoru ve smyčce událostí — tam žádné `open()`."""
+        self.a.remember_item("idx:sosacd_m_1", {"name": "starý rejstřík"})
+        pred = sorted(p.name for p in pathlib.Path(self.tmp).iterdir())
+        from nokturno_core.lib.store import Store
+        Store(self.tmp).index()
+        self.assertEqual(sorted(p.name for p in pathlib.Path(self.tmp).iterdir()), pred)
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"streamuj_username": "u", "streamuj_password": "p"}, tmp)
+            before = sorted(p.name for p in pathlib.Path(tmp).iterdir())
+            engine.sources()
+            self.assertEqual(sorted(p.name for p in pathlib.Path(tmp).iterdir()), before)
+
+
+
+class TestVypadekZdroje(unittest.TestCase):
+    """Výpadek jednoho zdroje (vypnutý addon Luny) nesmí shodit hledání v ostatních."""
+
+    def _engine(self, tmp):
+        from nokturno_core.lib.luna_api import LunaApi, LunaError
+        engine = Engine({}, tmp)
+
+        class MrtvaLuna(LunaApi):
+            def __init__(self):
+                pass
+
+            def streams(self, *a, **k):
+                raise LunaError("<urlopen error [Errno 111] Connection refused> "
+                                "(http://192.168.1.10:7126/e1.tajnytoken/stream/movie/tt1.json)")
+
+        engine.api_for = lambda item_id: MrtvaLuna()
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Film", "year": 2020}, None)
+        engine._cross_streams = lambda *a, **k: []
+        engine._webshare_subtitles = lambda *a, **k: []
+        engine._fill_audio = lambda streams, *a, **k: streams
+        engine._hellspy_streams = lambda *a, **k: []
+        engine._webshare_streams = lambda *a, **k: [
+            {"url": "ws:abc", "label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB", "source": "ws", "_direct": True}]
+        return engine
+
+    def test_luna_mimo_provoz_ostatni_zdroje_jedou(self):
+        from nokturno_core.lib.source_errors import summarize
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            failures = []
+            found = engine.streams("movie", "tt1", failures=failures)
+            self.assertEqual(len(found), 1, "stream z WebShare musí zůstat")
+            self.assertEqual([label for label, _e in failures], ["Luna"])
+            self.assertEqual(summarize(failures), ["Luna neodpovídá"])
+
+    def test_vysledek_s_vypadkem_se_necachuje(self):
+        """Jinak by po návratu Luny její streamy chyběly 72 hodin."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            engine.streams("movie", "tt1", failures=[])
+            engine.api_for = lambda item_id: None   # Luna zpátky (tady: bez chyby, nic nevrátí)
+            druhe = []
+            engine.api_for = lambda item_id: type("L", (), {"streams": lambda self, *a, **k: []})()
+            engine.streams("movie", "tt1", failures=druhe)
+            self.assertEqual(druhe, [], "druhé hledání se muselo opravdu provést, ne vzít z cache")
+            cache = list(pathlib.Path(tmp, "cache").glob("*.json"))
+            self.assertTrue(cache, "úspěšný výsledek bez výpadku se cachuje")
+
+
+class TestPopisVypadku(unittest.TestCase):
+    def test_bez_adresy_a_tokenu(self):
+        from nokturno_core.lib.source_errors import describe_failure
+        chyba = "<urlopen error [Errno 111] Connection refused> (http://192.168.1.10:7126/e1.tajny/stream/x.json)"
+        self.assertEqual(describe_failure("Luna", chyba), "Luna neodpovídá")
+        self.assertEqual(describe_failure("WebShare", "login: Wrong password"), "WebShare: login: Wrong password")
+        self.assertNotIn("tajny", describe_failure("Luna", "divná chyba https://x/e1.tajny/y"))
+
 
 if __name__ == "__main__":
     unittest.main()
