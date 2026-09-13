@@ -12,6 +12,7 @@ import inspect
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -217,6 +218,52 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
         relevant = self._relevant("Jak vycvičit draka", 2010)
         self.assertFalse(relevant("Jak_vycvicit_draka_2025"))
         self.assertTrue(relevant("Jak_vycvicit_draka_2010_CZ"))
+
+
+
+class TestStoreSdilenyViceProcesy(unittest.TestCase):
+    """Doplněk v Kodi je nový proces na každý výpis, k tomu služba na pozadí — všichni
+    nad týmiž soubory. Dvě instance `Store` nad jednou složkou tu hrají dva procesy."""
+
+    def setUp(self):
+        from nokturno_core.lib.store import Store
+        self.tmp = tempfile.mkdtemp()
+        self.a, self.b = Store(self.tmp), Store(self.tmp)
+
+    def test_zapis_z_jineho_procesu_se_neprepise(self):
+        """A si soubor načte, B do něj přidá snímek, A přidá svůj — snímek od B musí zůstat.
+
+        Přesně takhle výpis katalogu Sosáče (rejstřík `idx:`) přepsal snímek,
+        který mezitím uložilo přehrání, a titul se v Pokračovat neukázal."""
+        self.a.item("x")                                   # A má items v paměti
+        time.sleep(0.01)
+        self.b.remember_item("tt38061210", {"title": "Why Did I Get Married Again?"})
+        time.sleep(0.01)
+        self.a.remember_item("tt1", {"title": "jiný"})
+        self.assertIsNotNone(self.b.item("tt38061210"))
+        self.assertIsNotNone(self.b.item("tt1"))
+
+    def test_rozkoukane_ze_sluzby_nevrati_odebrane(self):
+        """Služba drží `watched` dlouho; když mezitím doplněk titul z Pokračovat
+        odebral, zápis pozice jiného titulu ze služby ho nesmí vrátit."""
+        self.a.set_resume("film1", 100, 1000)
+        self.b.in_progress()                               # B (služba) má watched v paměti
+        time.sleep(0.01)
+        self.a.set_resume("film1", 0, 0)                   # odebráno z Pokračovat
+        time.sleep(0.01)
+        self.b.set_resume("film2", 200, 1000)
+        self.assertEqual([k for k, _v in self.a.in_progress()], ["film2"])
+
+    def test_rejstrik_sosace_ma_vlastni_soubor(self):
+        self.a.remember_item("tt1", {"title": "film"})
+        self.a.remember_item("idx:sosacd_m_1", {"name": "starý rejstřík"})   # jako před 2.0.23
+        index = self.b.index()
+        self.assertEqual(index.item("idx:sosacd_m_1")["name"], "starý rejstřík")
+        self.assertNotIn("idx:sosacd_m_1", self.b.load("items", {}), "odstěhováno z items.json")
+        index.remember_item("idx:sosacd_m_2", {"name": "nový"})
+        self.assertEqual(set(self.a.load("items", {})), {"tt1"})
+        self.assertEqual(index.item("tt1")["title"], "film", "snímek přehraného titulu přes rejstřík")
+        self.assertTrue(pathlib.Path(self.tmp, "sosac_index.json").exists())
 
 
 if __name__ == "__main__":
