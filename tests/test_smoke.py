@@ -223,6 +223,16 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
         self.assertTrue(relevant("Toy.Story.5.2026.1080p"))
         self.assertFalse(relevant("Toy Story 2"))
 
+    def test_idiom_s_nazvem_uprostred_neprojde(self):
+        """„Pět švestek“ (2026) × „Seber si svých pět švestek“ (1983) — prošlo v kartě HA."""
+        for nazev in ("Pět švestek", "Pet svestek"):
+            relevant = self._relevant(nazev, 2026)
+            for jine in ("Seber si svych pet svestek r1983 Pierre Richard CZ", "Seber si svých pět švestek"):
+                self.assertFalse(relevant(jine), (nazev, jine))
+            for ok in ("Pět švestek (2026) CZ 1080p", "Pet.svestek.2026.WEB-DL", "[CSFD] Pet svestek 2026",
+                       "CZ Dabing - Pet svestek 2026", "www.film.cz | Pet svestek 2026"):
+                self.assertTrue(relevant(ok), (nazev, ok))
+
     def test_rok_za_podtrzitkem(self):
         relevant = self._relevant("Jak vycvičit draka", 2010)
         self.assertFalse(relevant("Jak_vycvicit_draka_2025"))
