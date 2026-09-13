@@ -160,5 +160,18 @@ class TestStats(unittest.TestCase):
         self.assertIn("sosacd_m_x", self.stats.data["plays"])
 
 
+class TestSlucovaniPrimychStreamu(unittest.TestCase):
+    def test_osamocene_soubory_se_neorezavaji(self):
+        """Soubory z WebShare/HellSpy bez protějšku v Luně musí zůstat všechny.
+
+        Strop 8 dřív v HA schoval většinu streamů (Toy Story 5: 17 proti 64 v Kodi).
+        """
+        direct = [{"label": f"Film.2026.{i}.mkv", "detail": f"{1 + i / 10:.1f} GB",
+                   "source": "ws" if i % 2 else "hs", "url": f"ws:{i}", "_direct": True}
+                  for i in range(30)]
+        for s in direct:
+            streams.parse_stream(s)
+        self.assertEqual(len(Engine._merge_direct(direct)), 30)
+
 if __name__ == "__main__":
     unittest.main()
