@@ -494,5 +494,47 @@ class TestSledujtetoMedia(unittest.TestCase):
             self.assertEqual(popis["channels"], {"CZ": "5.1"})
 
 
+
+class TestCeskyNazevZWikidat(unittest.TestCase):
+    """Bez Luny/TMDB je název anglický a české soubory by přísný filtr zahodil."""
+
+    def test_cesky_soubor_projde_s_anglickym_nazvem(self):
+        from nokturno_core import engine as modul
+        puvodni_wd, puvodni_cm = modul.local_titles, modul._cinemeta
+        modul.local_titles = lambda imdb: ["Harry Potter a Ohnivý pohár", "Harry Potter a Ohnivá čaša"]
+        modul._cinemeta = lambda ctype, imdb: {"name": "Harry Potter and the Goblet of Fire"}
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                engine = Engine({}, tmp)
+                meta = {"id": "tt0330373", "name": "Harry Potter and the Goblet of Fire", "year": 2005}
+                self.assertIn("Harry Potter a Ohnivý pohár", engine.original_titles(meta, "movie"))
+                _dotazy, relevant = engine._title_queries(meta, None, "movie", None, True)
+                self.assertTrue(relevant("Harry Potter a Ohnivý pohár 2005 CZ dabing HD"))
+                self.assertTrue(relevant("Harry.Potter.and.the.Goblet.of.Fire.2005.1080p"))
+                self.assertFalse(relevant("Harry Potter a Fénixův řád 2007 CZ dabing"))
+        finally:
+            modul.local_titles, modul._cinemeta = puvodni_wd, puvodni_cm
+
+    def test_vypadek_wikidat_se_necachuje(self):
+        from nokturno_core import engine as modul
+        from nokturno_core.lib.wikidata_api import WikidataError
+        volani = []
+        puvodni_wd, puvodni_cm = modul.local_titles, modul._cinemeta
+
+        def spadne(imdb):
+            volani.append(imdb)
+            raise WikidataError("timeout")
+        modul.local_titles, modul._cinemeta = spadne, (lambda ctype, imdb: {"name": ""})
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                engine = Engine({}, tmp)
+                meta = {"id": "tt1", "name": "Film"}
+                engine.original_titles(meta, "movie")
+                engine.original_titles(meta, "movie")
+                self.assertEqual(len(volani), 2, "po výpadku se má zkusit znovu")
+        finally:
+            modul.local_titles, modul._cinemeta = puvodni_wd, puvodni_cm
+
+
 if __name__ == "__main__":
     unittest.main()
