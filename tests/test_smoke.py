@@ -552,5 +552,33 @@ class TestKoncovkaNazvu(unittest.TestCase):
             self.assertEqual(clean_file_name(clean), clean, clean)
 
 
+class TestSkrytyDalsiDil(unittest.TestCase):
+    """Odebraný „Další díl“ se musí přenést i na Kodi, které bylo vypnuté."""
+
+    def test_synchronizace_skryteho_dilu(self):
+        from nokturno_core.lib.store import Store
+        from nokturno_core.lib.sync import apply_changes, collect_changes
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            obyvak, office = Store(a), Store(b)
+            office.hide_next("tt1067851", "tt1067851:1:2")
+            zmeny = collect_changes(office, 0)
+            self.assertEqual(zmeny["next_hidden"]["tt1067851"]["ep"], "tt1067851:1:2")
+            self.assertEqual(apply_changes(obyvak, zmeny), 1)
+            self.assertEqual(obyvak.next_hidden("tt1067851"), "tt1067851:1:2")
+            # starší záznam z druhé strany nepřepíše novější
+            stary = {"next_hidden": {"tt1067851": {"ep": "tt1067851:1:1", "ts": 1}}}
+            self.assertEqual(apply_changes(obyvak, stary), 0)
+            self.assertEqual(obyvak.next_hidden("tt1067851"), "tt1067851:1:2")
+
+    def test_stary_format_bez_casu(self):
+        from nokturno_core.lib.store import Store
+        from nokturno_core.lib.sync import collect_changes
+        with tempfile.TemporaryDirectory() as a:
+            s = Store(a)
+            s.save("next_hidden", {"tt1": "tt1:1:2"})
+            self.assertEqual(s.next_hidden("tt1"), "tt1:1:2")
+            self.assertEqual(collect_changes(s, 0)["next_hidden"], {})
+
+
 if __name__ == "__main__":
     unittest.main()
