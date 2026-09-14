@@ -714,3 +714,109 @@ class TestSosacNovePridane(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOpravyZAuditu(unittest.TestCase):
+    """Čtyři nálezy auditu 2026-09-14 — každý byl v ostrém provozu vidět jako pád,
+    únik nebo díra, a každý má tady regresi."""
+
+    def test_vyprsely_odkaz_streamuj_neshodi_vypis(self):
+        """`SosacError` z `resolve("streamuj:…")` dřív prošla `_fill_audio` jako cizí výjimka."""
+        from nokturno_core.engine import NokturnoError
+        from nokturno_core.lib.sosac_direct import SosacError
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"streamuj_username": "u", "streamuj_password": "p"}, tmp)
+
+            class VyprselyStreamuj:
+                def resolve(self, url):
+                    raise SosacError("streamuj: timeout")
+            engine._sosac = VyprselyStreamuj()
+            with self.assertRaises(NokturnoError) as ctx:
+                engine.resolve("streamuj:https://www.streamuj.tv/x")
+            self.assertIn("Sosáč", str(ctx.exception))
+            self.assertEqual(engine._media_from_file("streamuj:https://www.streamuj.tv/x"), {})
+            # ani jiná chyba při čtení hlavičky (rozbitý soubor, síť) nesmí z loaderu vylétnout
+            engine.resolve = lambda url: (_ for _ in ()).throw(RuntimeError("cokoli"))
+            self.assertEqual(engine._media_from_file("ws:abc"), {})
+            streams = [{"url": "ws:abc", "label": "a.mkv", "detail": "1 GB", "source": "ws"}]
+            self.assertEqual(engine._fill_audio(list(streams)), streams)
+
+    def test_cteni_hlavicky_neprecte_cely_soubor(self):
+        """Server, který Range ignoruje, pošle 200 a celý soubor — číst se smí jen výřez."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from nokturno_core.lib import mediainfo
+
+        class Zdroj(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                if self.path == "/range":
+                    self.send_response(206)
+                    self.send_header("Content-Range", "bytes 0-15/4000000")
+                    self.send_header("Content-Length", "16")
+                    self.end_headers()
+                    self.wfile.write(b"\x1a\x45\xdf\xa3" + b"\x00" * 12)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Length", str(4_000_000))
+                self.end_headers()
+                try:
+                    for _ in range(4_000_000 // 65536):
+                        self.wfile.write(b"\x00" * 65536)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Zdroj)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        try:
+            self.assertEqual(mediainfo.fetch_sized(f"{base}/cely", length=16), (b"", 0))
+            data, total = mediainfo.fetch_sized(f"{base}/range", length=16)
+            self.assertEqual((len(data), total), (16, 4_000_000))
+            info = mediainfo.probe(f"{base}/cely")
+            self.assertEqual((info["audio"], info["height"], info["size"]), ([], 0, 0), "bez výřezu nemá co číst")
+            # a takový „prázdný" výsledek si jádro nesmí pamatovat 30 dní (audit 1.5)
+            with tempfile.TemporaryDirectory() as tmp:
+                engine = Engine({}, tmp)
+                engine.resolve = lambda url: f"{base}/cely"
+                self.assertEqual(engine._media_from_file("ws:x")["size"], 0)
+                cache = pathlib.Path(tmp) / "cache"
+                self.assertEqual([p.name for p in cache.glob("*.json")] if cache.exists() else [], [])
+                engine.resolve = lambda url: f"{base}/range"
+                engine._media_from_file("ws:y")
+                self.assertEqual(len(list(cache.glob("*.json"))), 1, "skutečně přečtená hlavička se pamatuje")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_streamuj_resolve_jen_na_streamuj(self):
+        """Odkaz za `streamuj:` je z exportu Sosáče, u Stremia i z adresy od kohokoli —
+        GET kamkoli do sítě (SSRF) se nesmí ani začít."""
+        from nokturno_core.lib.sosac_direct import SosacDirect, SosacError, je_streamuj
+        for ok in ("https://www.streamuj.tv/video/abc", "http://streamuj.tv/x", "https://cdn1.streamuj.tv/f.mp4"):
+            self.assertTrue(je_streamuj(ok), ok)
+        for cizi in ("http://192.168.1.10:8123/api/", "https://streamuj.tv.evil.com/x", "https://evilstreamuj.tv/",
+                     "ftp://streamuj.tv/x", "file:///etc/passwd", "", "streamuj.tv/x"):
+            self.assertFalse(je_streamuj(cizi), cizi)
+        d = SosacDirect("u", "p")
+        with self.assertRaises(SosacError) as ctx:
+            d.resolve("streamuj:http://127.0.0.1:1/api")
+        self.assertIn("streamuj.tv", str(ctx.exception))
+
+    def test_token_luny_a_ucet_streamuj_nejsou_v_chybe(self):
+        """Hláška jde do notifikace Kodi a do kodi.log, který lidé posílají do fór."""
+        from nokturno_core.lib.luna_api import LunaApi, LunaError
+        from nokturno_core.lib.sosac_direct import SosacDirect, SosacError, bez_uctu
+        luna = LunaApi("http://127.0.0.1:1", "e1.tajnytoken")
+        with self.assertRaises(LunaError) as ctx:
+            luna.meta("movie", "tt1")
+        self.assertNotIn("tajnytoken", str(ctx.exception))
+        self.assertIn("127.0.0.1:1", str(ctx.exception), "adresa serveru v hlášce zůstává, pomáhá ladit")
+        self.assertEqual(bez_uctu("https://www.streamuj.tv/json_api_player.php?action=x&login=ja&password=abc&location=1"),
+                         "https://www.streamuj.tv/json_api_player.php?action=x&login=%E2%80%A6&password=%E2%80%A6&location=1")
+        with self.assertRaises(SosacError) as ctx:
+            SosacDirect("ja", "tajne")._get("http://127.0.0.1:1/x?login=ja&password=abcdef")
+        self.assertNotIn("abcdef", str(ctx.exception))
+        self.assertIn("127.0.0.1:1/x", str(ctx.exception))
