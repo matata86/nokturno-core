@@ -655,5 +655,22 @@ class TestSosacBezOdkazu(unittest.TestCase):
         self.assertLess(len(calls), 250)
 
 
+class TestSosacNovePridane(unittest.TestCase):
+    """„Nově přidané" se dělí na s CZ dabingem a jen s CZ titulky, bez překryvu."""
+
+    def test_rozdeleni_podle_jazyka(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        data = [
+            {"n": {"cs": "Dabing"}, "m": "1", "l": "a", "d": ["cs"], "s": ["cs"]},
+            {"n": {"cs": "Titulky"}, "m": "2", "l": "b", "d": ["en"], "s": ["cs"]},
+            {"n": {"cs": "Nic"}, "m": "3", "l": "c", "d": ["ja"]},
+        ]
+        d = SosacDirect()
+        d._get = lambda url, ttl=None: data
+        self.assertEqual([m["name"] for m in d.catalog("movie", "moviesrecentlyadded_dub")], ["Dabing"])
+        self.assertEqual([m["name"] for m in d.catalog("movie", "moviesrecentlyadded_subs")], ["Titulky"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

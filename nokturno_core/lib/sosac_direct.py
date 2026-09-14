@@ -34,7 +34,10 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Kodi plugin.video.nokturno"
 MOVIE_LISTS = [
     ("moviesmostpopular", "Nejpopulárnější filmy"),
     ("moviesrecentlyadded", "Nově přidané filmy"),
+    ("moviesrecentlyadded_dub", "Nově přidané s CZ dabingem"),
+    ("moviesrecentlyadded_subs", "Nově přidané s CZ titulky"),
 ]
+CZECH = ("cs", "sk")
 SERIES_LISTS = [
     ("tvshowsmostpopular", "Nejpopulárnější seriály"),
     ("tvshowsrecentlyadded", "Nově přidané epizody"),
@@ -179,6 +182,17 @@ class SosacDirect:
             raw, conv = self._get(EXPORT + f"pismena/{(genre or 'a').lower()}.json"), self.movie_meta
         elif cid == "tvaz":
             raw, conv = self._get(EXPORT + f"tvpismena/{(genre or 'a').lower()}.json"), self.series_meta
+        elif cid in ("moviesrecentlyadded_dub", "moviesrecentlyadded_subs"):
+            # export „nově přidané" míchá všechny jazyky (zhruba půlka s CZ dabingem,
+            # půlka jen s CZ titulky, pár cizojazyčných bez titulků) — rozdělí se
+            # na dva seznamy bez překryvu, cizojazyčné bez titulků vypadnou
+            want_dub = cid.endswith("_dub")
+
+            def conv(v):
+                dub = any(x in CZECH for x in v.get("d") or [])
+                subs = any(x in CZECH for x in v.get("s") or [])
+                return self.movie_meta(v) if (dub if want_dub else subs and not dub) else None
+            raw = self._get(EXPORT + "moviesrecentlyadded.json", ttl=LIST_TTL)
         # žebříčky se mění pomalu a služba je na pozadí zahřívá po třech hodinách —
         # kratší TTL by znamenalo, že uživatel stejně trefí studenou cache
         elif cid == "tvshowsrecentlyadded":
