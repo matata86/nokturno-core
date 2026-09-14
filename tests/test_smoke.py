@@ -974,3 +974,82 @@ class TestFreshCache(unittest.TestCase):
         SosacDirect(cache=Cache(), cache_ttl=600)._get("http://s/a", ttl=3600)
         SosacDirect(cache=Cache(), cache_ttl=600, fresh=True)._get("http://s/a", ttl=3600)
         self.assertEqual(videno, [600, 0, 3600, 0])
+
+
+class TestDavkaPredVydanim(unittest.TestCase):
+    """Audit 2026-09-14, drobné, ale skutečné chyby před vydáním 3.1.12."""
+
+    def test_torrenty_konkretni_dil_pred_balikem_sezony(self):
+        from nokturno_core.lib.prowlarr import ProwlarrApi
+        rows = [{"title": "Serial.S02.Complete.1080p", "seeders": 50, "size_gb": 40},
+                {"title": "Serial.S02E01.1080p", "seeders": 5, "size_gb": 2},
+                {"title": "Serial.2x01.720p", "seeders": 8, "size_gb": 1}]
+        self.assertEqual([r["seeders"] for r in ProwlarrApi._order(rows, episode=1)], [8, 5, 50],
+                         "díl napřed (podle seedů), balík až za ním")
+        self.assertEqual([r["seeders"] for r in ProwlarrApi._order(rows)], [50, 8, 5], "u filmu jen seedy")
+
+    def test_stats_snese_soubeh(self):
+        import threading
+        from nokturno_core.lib.stats import Stats
+        stats = Stats(tempfile.mkdtemp())
+        chyby = []
+
+        def pis(n):
+            try:
+                for i in range(150):
+                    stats.note_play(f"tt{n}{i}", "Film", 2020, "movie")
+                    stats.note_use()
+                    stats.payload(version="1")
+            except Exception as err:  # noqa: BLE001
+                chyby.append(repr(err))
+        vlakna = [threading.Thread(target=pis, args=(n,)) for n in range(6)]
+        for v in vlakna:
+            v.start()
+        for v in vlakna:
+            v.join(20)
+        self.assertEqual(chyby, [])
+        self.assertLessEqual(len(stats.payload()["plays"]), 300)
+
+    def test_rozbity_export_sosace_je_sosac_error(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect, SosacError
+
+        class Cache:
+            def __init__(self, data):
+                self.data = data
+
+            def cached(self, key, ttl, loader):
+                return self.data
+        with self.assertRaises(SosacError):
+            SosacDirect(cache=Cache({"error": "maintenance"})).catalog("movie", "moviesmostpopular")
+        with self.assertRaises(SosacError):
+            SosacDirect(cache=Cache({"q": []}))._search("movie", "matrix")
+        with self.assertRaises(SosacError):
+            SosacDirect(cache=Cache("html")).episodes("42")
+        # neciferný klíč sezóny („speciály“) se přeskočí, nesmí shodit seznam dílů
+        d = SosacDirect(cache=Cache([{"1": {"1": {"n": "Pilot", "l": "x"}}, "special": {"a": {}}}]))
+        self.assertEqual([(v["season"], v["episode"], v["title"]) for v in d.episodes("42")], [(1, 1, "Pilot")])
+
+    def test_hledani_s_vypadkem_zdroje_se_necachuje(self):
+        from nokturno_core import engine as modul
+        from nokturno_core.lib.sosac_direct import SosacError
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            volani = []
+
+            class SpadlySosac:
+                def catalog(self, *a, **k):
+                    raise SosacError("export 503")
+
+            class Cinemeta:
+                def catalog(self, ctype, cid, search=""):
+                    volani.append(search)
+                    return [{"id": "tt1", "name": "Matrix", "year": 1999, "type": "movie"}]
+            engine._sosac_db, engine._cinemeta = SpadlySosac(), Cinemeta()
+            puvodni = modul.enrich
+            modul.enrich = lambda *a, **k: None
+            try:
+                self.assertEqual(len(engine.search("movie", "matrix")), 1, "degradovaný výsledek se ukáže")
+                engine.search("movie", "matrix")
+                self.assertEqual(len(volani), 2, "ale nepamatuje se — druhé hledání jde znovu na zdroje")
+            finally:
+                modul.enrich = puvodni
