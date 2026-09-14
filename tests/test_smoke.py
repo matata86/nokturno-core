@@ -164,6 +164,28 @@ class TestStats(unittest.TestCase):
         self.assertEqual(payload["product"], "stremio")
         self.assertNotIn("sources", self.stats.payload(), "starší volání bez zdrojů je nepošle vůbec")
 
+    def test_ping_bez_titulu_a_zdroju(self):
+        """Vypnuté statistiky: jen id, produkt a verze — nic, co by šlo o používání vyčíst."""
+        self.stats.note_use()
+        self.stats.note_play("tt0133093", "Matrix", 1999, "movie")
+        ping = self.stats.ping_payload(version="3.1.9", product="kodi")
+        self.assertEqual(set(ping), {"id", "ping", "version", "product"})
+        self.assertTrue(ping["ping"])
+        sent = {}
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1): return b""
+            def getcode(self): return 200
+
+        import urllib.request
+        from unittest import mock
+        with mock.patch.object(urllib.request, "urlopen",
+                               lambda req, timeout=None: (sent.update(json.loads(req.data)), Resp())[1]):
+            self.assertEqual(self.stats.send("https://x/collect", version="3.1.9", product="kodi", ping=True), (True, ""))
+        self.assertEqual(sent, ping)
+
     def test_note_play_bez_titulu_nespadne(self):
         """`title=""`/`year=None` je běžný stav (dohledání meta selhalo) — nesmí to shodit."""
         self.stats.note_play("sosacd_m_x")
