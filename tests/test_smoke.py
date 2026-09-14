@@ -954,3 +954,23 @@ class TestVykonZdroju(unittest.TestCase):
         self.assertEqual(api._with_token("search", what="x"), "ok")
         self.assertEqual(logins, [1])
         self.assertEqual(pokusy, ["t", "t2"])
+
+
+class TestFreshCache(unittest.TestCase):
+    """`fresh=True`: API cache jen zapisuje, nečte — zahřívání na pozadí v Kodi tak obnoví
+    i to, čemu TTL ještě neprošlo (dřív s TTL rovným intervalu warm-up nic neobnovil)."""
+
+    def test_luna_a_sosac_s_fresh_ctou_s_ttl_nula(self):
+        from nokturno_core.lib.luna_api import LunaApi
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        videno = []
+
+        class Cache:
+            def cached(self, key, ttl, loader):
+                videno.append(ttl)
+                return {"x": 1}
+        LunaApi("http://luna", "t", cache=Cache(), cache_ttl=600)._get_cached("http://luna/a")
+        LunaApi("http://luna", "t", cache=Cache(), cache_ttl=600, fresh=True)._get_cached("http://luna/a")
+        SosacDirect(cache=Cache(), cache_ttl=600)._get("http://s/a", ttl=3600)
+        SosacDirect(cache=Cache(), cache_ttl=600, fresh=True)._get("http://s/a", ttl=3600)
+        self.assertEqual(videno, [600, 0, 3600, 0])
