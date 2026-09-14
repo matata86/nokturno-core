@@ -640,6 +640,20 @@ class TestSosacBezOdkazu(unittest.TestCase):
         m = SosacDirect().movie_meta({"n": {"cs": "Harry"}, "m": "0241527", "l": "35da"})
         self.assertEqual(m["id"], "sosacd_m_35da")
 
+    def test_katalog_prevadi_jen_stranku(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        d = SosacDirect()
+        raw = [{"n": {"cs": f"F{i}"}, "l": f"h{i}"} for i in range(3000)]
+        raw[1]["l"] = None
+        calls = []
+        orig = d.movie_meta
+        d.movie_meta = lambda v: calls.append(1) or orig(v)
+        d._get = lambda url, ttl=None: raw
+        page = d.catalog("movie", "az", genre="D", skip=100, page=100)
+        self.assertEqual(len(page), 100)
+        self.assertEqual(page[0]["id"], "sosacd_m_h101")
+        self.assertLess(len(calls), 250)
+
 
 if __name__ == "__main__":
     unittest.main()

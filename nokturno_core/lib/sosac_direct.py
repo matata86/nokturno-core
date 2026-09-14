@@ -174,20 +174,29 @@ class SosacDirect:
             url = genres.get(genre) or ""
             if not url:
                 return []
-            items = [self.movie_meta(v) for v in self._get(url)]
+            raw, conv = self._get(url), self.movie_meta
         elif cid == "az":
-            items = [self.movie_meta(v) for v in self._get(EXPORT + f"pismena/{(genre or 'a').lower()}.json")]
+            raw, conv = self._get(EXPORT + f"pismena/{(genre or 'a').lower()}.json"), self.movie_meta
         elif cid == "tvaz":
-            items = [self.series_meta(v) for v in self._get(EXPORT + f"tvpismena/{(genre or 'a').lower()}.json")]
+            raw, conv = self._get(EXPORT + f"tvpismena/{(genre or 'a').lower()}.json"), self.series_meta
         # žebříčky se mění pomalu a služba je na pozadí zahřívá po třech hodinách —
         # kratší TTL by znamenalo, že uživatel stejně trefí studenou cache
         elif cid == "tvshowsrecentlyadded":
-            items = [self.episode_meta(v) for v in self._get(EXPORT + cid + ".json", ttl=LIST_TTL)]
+            raw, conv = self._get(EXPORT + cid + ".json", ttl=LIST_TTL), self.episode_meta
         elif ctype == "series":
-            items = [self.series_meta(v) for v in self._get(EXPORT + cid + ".json", ttl=LIST_TTL)]
+            raw, conv = self._get(EXPORT + cid + ".json", ttl=LIST_TTL), self.series_meta
         else:
-            items = [self.movie_meta(v) for v in self._get(EXPORT + cid + ".json", ttl=LIST_TTL)]
-        items = [m for m in items if m]
+            raw, conv = self._get(EXPORT + cid + ".json", ttl=LIST_TTL), self.movie_meta
+        # převádět jen zobrazenou stránku: každý převod zapisuje do rejstříku a písmeno
+        # či žánr mají tisíce titulů — na ARM boxu se seznam „D" (2224) načítal přes 10 minut
+        items = []
+        for v in raw:
+            m = conv(v)
+            if not m:
+                continue
+            items.append(m)
+            if len(items) >= skip + page:
+                break
         return items[skip:skip + page]
 
     def episode_meta(self, v):
