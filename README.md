@@ -74,3 +74,13 @@ z větve pro Home Assistant.
 - **Ko-fi:** https://ko-fi.com/matata86
 - **PayPal:** https://paypal.me/matata86
 - **Bitcoin:** `bc1qhjwt8xxmuym0xsd50yfpvjph00386uz73gqwlc`
+
+## Výkon (od 2026-09-14)
+
+- `Engine.streams()` se čtyř zdrojů (Luna/Sosáč, WebShare, HellSpy, Sledujteto) ptá
+  **souběžně** (`ThreadPoolExecutor`), pořadí výsledků drží kvůli párování v `_merge_direct`.
+  Líné klienty (`ws`, `hs`, `st`, `sosac`) zakládá před spuštěním vláken.
+- `original_titles()` se za jeden výpis počítá jednou (paměť v enginu, 5 min; po výpadku
+  Wikidat jen 30 s, aby další výpis zkusil znovu) — dřív pětkrát, při výpadku Wikidat až 100 s navíc.
+- WebShare: selhání loginu už nezamkne zdroj do restartu (`WS_RETRY_S = 60`); re-login jen když
+  server odmítl (`WebshareApiError`), ne při síťové chybě.

@@ -585,7 +585,10 @@ class TestCeskyNazevZWikidat(unittest.TestCase):
                 meta = {"id": "tt1", "name": "Film"}
                 engine.original_titles(meta, "movie")
                 engine.original_titles(meta, "movie")
-                self.assertEqual(len(volani), 2, "po výpadku se má zkusit znovu")
+                self.assertEqual(len(volani), 1, "v jednom výpisu se výpadek nezkouší pětkrát (paměť v enginu)")
+                engine._orig_memo.clear()   # jako po ORIG_MEMO_FAIL_S — další výpis
+                engine.original_titles(meta, "movie")
+                self.assertEqual(len(volani), 2, "po výpadku se má zkusit znovu, na disku se necachuje")
         finally:
             modul.local_titles, modul._cinemeta = puvodni_wd, puvodni_cm
 
@@ -838,3 +841,116 @@ class TestOpravyZAuditu(unittest.TestCase):
             SosacDirect("ja", "tajne")._get("http://127.0.0.1:1/x?login=ja&password=abcdef")
         self.assertNotIn("abcdef", str(ctx.exception))
         self.assertIn("127.0.0.1:1/x", str(ctx.exception))
+
+
+from nokturno_core.engine import NokturnoError as NokturnoError_  # noqa: E402
+
+
+class TestVykonZdroju(unittest.TestCase):
+    """Audit 2026-09-14, výkon: čtyři zdroje streamů souběžně, originální názvy jednou
+    za výpis, WebShare po selhání loginu zkusí znovu, re-login jen na odmítnutí serverem."""
+
+    def _engine(self, tmp, zpozdeni=0.3):
+        engine = Engine({}, tmp)
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Film", "year": 2020}, None)
+        engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError_("není nastaven zdroj"))
+        engine._webshare_subtitles = lambda *a, **k: []
+        engine._fill_audio = lambda streams, *a, **k: streams
+        engine._storage_streams = lambda *a, **k: []
+        poradi = []
+
+        def zdroj(jmeno, url):
+            def fetch(*a, **k):
+                time.sleep(zpozdeni)
+                poradi.append(jmeno)
+                return [{"url": url, "label": f"{jmeno}.mkv", "detail": "1 GB", "source": jmeno, "_direct": True}]
+            return fetch
+        engine._cross_streams = zdroj("main", "streamuj:https://www.streamuj.tv/1")
+        engine._webshare_streams = zdroj("ws", "ws:1")
+        engine._hellspy_streams = zdroj("hs", "hs:1:a")
+        engine._sledujteto_streams = zdroj("st", "st:1")
+        engine._merge_direct = lambda found: found
+        return engine, poradi
+
+    def test_zdroje_bezi_soubezne_a_drzi_poradi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine, _poradi = self._engine(tmp, zpozdeni=0.3)
+            start = time.time()
+            out = engine.streams("movie", "tt1")
+            self.assertLess(time.time() - start, 0.9, "čtyři zdroje po 0,3 s musí doběhnout dřív než za 1,2 s")
+            self.assertEqual([s["source"] for s in out], ["Luna", "WebShare", "HellSpy", "Sledujteto"], "pořadí zdrojů drží")
+
+    def test_padly_zdroj_nezastavi_ostatni_a_hlasi_se(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine, _ = self._engine(tmp, zpozdeni=0)
+
+            def spadne(*a, **k):
+                raise RuntimeError("HellSpy mimo provoz")
+            engine._hellspy_streams = spadne
+            failures = []
+            out = engine.streams("movie", "tt2", failures=failures)
+            self.assertEqual([s["source"] for s in out], ["Luna", "WebShare", "Sledujteto"])
+            self.assertEqual([f[0] for f in failures], ["HellSpy"])
+
+    def test_original_titles_jednou_za_vypis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"streamuj_username": "u", "streamuj_password": "p"}, tmp)
+            volani = []
+
+            class Sosac:
+                def meta(self, ctype, alt):
+                    volani.append(alt)
+                    return {"_orig": "The Matrix", "_title": "Matrix"}
+            engine._sosac = Sosac()
+            meta = {"id": "sosacd_1", "_title": "Matrix", "year": 1999}
+            for _ in range(5):
+                self.assertEqual(engine.original_titles(meta, "movie", "sosacd_1"), ["The Matrix"])
+            self.assertEqual(volani, ["sosacd_1"], "pět zdrojů = jeden dotaz, ne pět")
+            self.assertEqual(engine.original_titles({"id": "sosacd_2", "_title": "Jiný"}, "movie", "sosacd_2"),
+                             ["The Matrix", "Matrix"])
+            self.assertEqual(volani, ["sosacd_1", "sosacd_2"], "jiný titul se počítá znovu")
+
+    def test_webshare_po_selhani_loginu_zkusi_znovu(self):
+        from unittest import mock
+        from nokturno_core import engine as modul
+        from nokturno_core.lib.webshare_api import WebshareError
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"ws_username": "u", "ws_password": "p"}, tmp)
+            with mock.patch.object(modul.WebshareApi, "login", side_effect=[WebshareError("timeout"), "tok"]) as login:
+                self.assertIsNone(engine.ws, "první login selhal")
+                self.assertIsNone(engine.ws, "do WS_RETRY_S se nezkouší")
+                self.assertEqual(login.call_count, 1)
+                engine._ws_retry_after = 0
+                self.assertIsNotNone(engine.ws, "po odstupu se zkusí znovu a uspěje")
+                self.assertIsNotNone(engine.ws)
+                self.assertEqual(login.call_count, 2, "úspěch se pamatuje")
+
+    def test_relogin_jen_na_odmitnuti_serverem(self):
+        from nokturno_core.lib.webshare_api import WebshareApi, WebshareApiError, WebshareError
+        api = WebshareApi("u", "p", token="t")
+        logins = []
+
+        def login():
+            logins.append(1)
+            api.token = "t2"
+            return "t2"
+        api.login = login
+
+        def sit(endpoint, **data):
+            raise WebshareError("search: <urlopen error timed out>")
+        api._call = sit
+        with self.assertRaises(WebshareError):
+            api._with_token("search", what="x")
+        self.assertEqual(logins, [], "síťová chyba = žádný re-login (dřív salt+login+opakování)")
+
+        pokusy = []
+
+        def odmitnuto(endpoint, **data):
+            pokusy.append(data.get("wst"))
+            if len(pokusy) == 1:
+                raise WebshareApiError("search: Invalid token")
+            return "ok"
+        api._call = odmitnuto
+        self.assertEqual(api._with_token("search", what="x"), "ok")
+        self.assertEqual(logins, [1])
+        self.assertEqual(pokusy, ["t", "t2"])
