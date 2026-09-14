@@ -232,6 +232,10 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             for ok in ("Pět švestek (2026) CZ 1080p", "Pet.svestek.2026.WEB-DL", "[CSFD] Pet svestek 2026",
                        "CZ Dabing - Pet svestek 2026", "www.film.cz | Pet svestek 2026"):
                 self.assertTrue(relevant(ok), (nazev, ok))
+        certi = self._relevant("S čerty nejsou žerty", 1984)
+        for ok in ("S čerty nejsou žerty (1984) CZ", "S certy nejsou zerty Cz Dabing 1985.mp4",
+                   "S čerty nejsou žerty CZ Dabing 1985"):
+            self.assertTrue(certi(ok), ok)
 
     def test_rok_za_podtrzitkem(self):
         relevant = self._relevant("Jak vycvičit draka", 2010)
