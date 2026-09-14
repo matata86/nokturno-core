@@ -1053,3 +1053,124 @@ class TestDavkaPredVydanim(unittest.TestCase):
                 self.assertEqual(len(volani), 2, "ale nepamatuje se — druhé hledání jde znovu na zdroje")
             finally:
                 modul.enrich = puvodni
+
+
+class TestVykonJadra2(unittest.TestCase):
+    """Druhá dávka výkonu: TMDB bez N+1, sezóny souběžně, index seriálů Sosáče, jeden executor
+    v enrich, značka úložiště jednou za minutu, jedna cache hledání Luny."""
+
+    def test_tmdb_katalog_jeden_dotaz_na_polozku(self):
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        api = TmdbApi("k")
+        cesty = []
+
+        def get(path, **params):
+            cesty.append(path)
+            if path.startswith("/genre/"):
+                return {"genres": [{"id": 1, "name": "Akční"}]}
+            if path.startswith("/discover/"):
+                return {"results": [{"id": 10, "title": "A", "genre_ids": [1]}, {"id": 11, "title": "B"}]}
+            if path in ("/movie/10", "/movie/11"):
+                self.assertEqual(params.get("append_to_response"), "external_ids,images")
+                return {"external_ids": {"imdb_id": f"tt{path[-2:]}"}, "images": {"backdrops": [], "logos": []}}
+            raise AssertionError(path)
+        api._get = get
+        items = api.catalog("movie", "popular")
+        self.assertEqual([i["id"] for i in items], ["tt10", "tt11"])
+        self.assertEqual(len([c for c in cesty if c.startswith("/movie/")]), 2, "1 dotaz na položku, ne 2")
+        self.assertEqual(items[0]["genres"], ["Akční"])
+
+    def test_tmdb_sezony_soubezne(self):
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        api = TmdbApi("k")
+
+        def get(path, **params):
+            if path.startswith("/find/"):
+                return {"tv_results": [{"id": 5}]}
+            if path == "/tv/5":
+                return {"name": "Serial", "seasons": [{"season_number": n} for n in range(1, 7)], "images": {}}
+            if path.startswith("/tv/5/season/"):
+                time.sleep(0.2)
+                n = int(path.rsplit("/", 1)[1])
+                return {"episodes": [{"episode_number": 1, "name": f"S{n}E1"}]}
+            raise AssertionError(path)
+        api._get = get
+        start = time.time()
+        meta = api.meta("series", "tt5")
+        self.assertLess(time.time() - start, 0.8, "6 sezón po 0,2 s souběžně, ne 1,2 s za sebou")
+        self.assertEqual(len(meta["videos"]), 6)
+        self.assertEqual(meta["videos"][0]["id"], "tt5:1:1")
+
+    def test_sosac_index_serialu_se_stavi_jednou(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        stazeno = []
+
+        class Cache:
+            def __init__(self):
+                self.data = {}
+
+            def cached(self, key, ttl, loader):
+                if key not in self.data:
+                    self.data[key] = loader()
+                return self.data[key]
+        d = SosacDirect(cache=Cache())
+        d._get = lambda url, ttl=None: (stazeno.append(url) or
+                                        ([{"n": {"cs": "Matrix seriál", "en": "Matrix"}, "l": "x", "i": ""}] if url.endswith("/m.json") else []))
+        self.assertEqual([m["_title"] for m in d._search("series", "matrix")], ["Matrix seriál"])
+        d._search("series", "matrix")
+        d._search("series", "jiny")
+        self.assertEqual(len(stazeno), 27, "27 písmen jednou, ne při každém dotazu")
+        self.assertIn("sosac:tvindex", d.cache.data)
+
+    def test_enrich_sdili_executor_a_nedotahuje_titul_dvakrat(self):
+        import threading
+        from nokturno_core.lib import enrich as modul
+        self.assertNotIn("ThreadPoolExecutor(max_workers=WORKERS)\n    futures", pathlib.Path(modul.__file__).read_text())
+        volani = []
+        brzda = threading.Event()
+        puvodni = modul._lookup
+
+        def pomale(luna, store, ctype, meta):
+            volani.append(meta["imdb_id"])
+            brzda.wait(1)
+            return {"description": "popis"}
+        modul._lookup = pomale
+        try:
+            a = [{"imdb_id": "tt1", "name": "A"}, {"imdb_id": "tt1", "name": "A dup"}, {"imdb_id": "tt2", "name": "B"}]
+            t = threading.Thread(target=lambda: modul.enrich(a, deadline=3))
+            t.start()
+            time.sleep(0.2)
+            b = [{"imdb_id": "tt1", "name": "A znovu"}]
+            modul.enrich(b, deadline=3)   # tt1 už běží — druhé hledání se na něj jen napojí
+            brzda.set()
+            t.join(5)
+            self.assertEqual(sorted(volani), ["tt1", "tt2"], "tentýž titul jednou, i ze dvou hledání naráz")
+            self.assertEqual([m.get("description") for m in a + b], ["popis"] * 4)
+        finally:
+            modul._lookup = puvodni
+
+    def test_znacka_uloziste_jednou_za_minutu(self):
+        from nokturno_core.lib.storage_api import StorageApi
+        api = StorageApi("http://nas/dav/")
+        cteni = []
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def read(self, n):
+                return b"123.4"
+        api._open = lambda url, **k: cteni.append(url) or Resp()
+        self.assertEqual(api.revision(), "123.4")
+        self.assertEqual(api.revision(), "123.4")
+        self.assertEqual(len(cteni), 1)
+        api._rev = (0.0, "")
+        api.revision()
+        self.assertEqual(len(cteni), 2)
+
+    def test_hledani_luny_ma_jednu_cache(self):
+        src = (ROOT / "nokturno_core" / "engine.py").read_text(encoding="utf-8")
+        self.assertNotIn("luna:search:", src)

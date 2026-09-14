@@ -187,6 +187,7 @@ class TestProchazeni(unittest.TestCase):
             try:
                 self.assertEqual(len(api.files()), 5, "bez značky platí hodinová paměť")
                 srv.httpd.rev = "1789300000.5"
+                api._rev = (0.0, "")   # značka se čte nejvýš jednou za REV_TTL — tady jako po minutě
                 self.assertEqual(len(api.files()), 6, "nová značka = nové procházení")
                 self.assertEqual(api.revision(), "1789300000.5")
             finally:

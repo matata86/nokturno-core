@@ -84,3 +84,11 @@ z větve pro Home Assistant.
   Wikidat jen 30 s, aby další výpis zkusil znovu) — dřív pětkrát, při výpadku Wikidat až 100 s navíc.
 - WebShare: selhání loginu už nezamkne zdroj do restartu (`WS_RETRY_S = 60`); re-login jen když
   server odmítl (`WebshareApiError`), ne při síťové chybě.
+- TMDB: `external_ids` + `images` jedním dotazem (`append_to_response`) — stránka katalogu 1 + 20
+  požadavků místo 1 + 40; sezóny seriálu souběžně.
+- Sosáč: hledání seriálů nad indexem (`sosac:tvindex`, jednou denně) místo 27 souborů a normalizace
+  tisíců názvů při každém dotazu.
+- `enrich`: jeden sdílený executor na proces (dřív nový na každé hledání s `shutdown(wait=False)` —
+  desítky visících vláken) a dedup rozpracovaných dotazů na tentýž titul.
+- Úložiště: značka `.nokturno-rev` se čte nejvýš jednou za minutu (`REV_TTL`); hledání Luny má jednu
+  cache (v `LunaApi`), ne dvě.
