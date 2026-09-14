@@ -12,9 +12,9 @@ z `homeassistant`, což hlídá test.
 
 | Konzument | Bere | Poznámka |
 |---|---|---|
-| [Kodi/](../Kodi/CLAUDE.md) | `lib/` | doplněk pro Kodi; logiku enginu má rozpuštěnou v `default.py` |
-| [HA/](../HA/CLAUDE.md) | `lib/` + `engine.py` | integrace pro Home Assistant |
-| [Stremio/](../Stremio/CLAUDE.md) | vše | doplněk pro Stremio |
+| [plugin.video.nokturno](https://github.com/matata86/plugin.video.nokturno) | `lib/` | doplněk pro Kodi; logiku enginu má rozpuštěnou v `default.py` |
+| [nokturno-ha](https://github.com/matata86/nokturno-ha) | `lib/` + `engine.py` | integrace pro Home Assistant |
+| [nokturno-stremio](https://github.com/matata86/nokturno-stremio) | vše | doplněk pro Stremio |
 
 ## Pravidlo
 
