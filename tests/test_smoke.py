@@ -458,7 +458,6 @@ class TestSledujteto(unittest.TestCase):
         f = files[0]
         self.assertEqual((f["id"], f["quality"], f["duration"], f["size"]), ("123", "HD", 8177, 4500000000))
         self.assertEqual(f["subtitles"], ["https://x/s.srt"])
-        self.assertIn("video.size", api.last_keys)
         self.assertEqual(api.file_link("123"), "https://cdn/x.mp4")
         # druhé jádro nad stejným úložištěm se znovu nepřihlašuje
         api2 = self.st.SledujtetoApi("a@b.cz", "tajne", cache=self.store)
@@ -1174,3 +1173,47 @@ class TestVykonJadra2(unittest.TestCase):
     def test_hledani_luny_ma_jednu_cache(self):
         src = (ROOT / "nokturno_core" / "engine.py").read_text(encoding="utf-8")
         self.assertNotIn("luna:search:", src)
+
+
+class TestUdrzbaJadra(unittest.TestCase):
+    def test_jedna_human_size_a_fold(self):
+        from nokturno_core.lib import streams, webshare_api, hellspy_api, sledujteto_api, storage_api
+        for m in (webshare_api, hellspy_api, sledujteto_api, storage_api):
+            self.assertIs(m.human_size, streams.human_size, m.__name__)
+        self.assertEqual(streams.human_size(4.5 * 2 ** 30), "4.5 GB")
+        self.assertEqual(streams.human_size(512 * 2 ** 20), "512 MB")
+        self.assertEqual(streams.human_size("x"), "")
+        self.assertEqual(streams.human_size(0), "")
+        self.assertEqual(streams.parse_size_gb(streams.human_size(2 * 2 ** 30)), 2.0, "co napíšeme, i přečteme")
+        from nokturno_core import engine
+        self.assertIs(engine._fold, streams.fold)
+        self.assertIs(storage_api._fold, streams.fold)
+        self.assertEqual(streams.fold("Pět švestek"), "pet svestek")
+
+    def test_user_agent_nelze_o_hostiteli(self):
+        for path in sorted(ROOT.glob("nokturno_core/**/*.py")):
+            if path.name == "stats.py":
+                continue   # `agent` je parametr — hostitel ho posílá sám, výchozí hodnota patří Kodi
+            src = path.read_text(encoding="utf-8")
+            for lez in ("Kodi plugin.video.nokturno", "Home Assistant Nokturno"):
+                self.assertNotIn(lez, src, f"{path.name}: UA tvrdí, že je {lez}")
+
+    def test_bez_diagnostickeho_leseni_sledujteto(self):
+        from nokturno_core.lib.sledujteto_api import SledujtetoApi
+        api = SledujtetoApi("a@b.cz", "x")
+        for attr in ("last_keys", "last_me_keys", "last_sample"):
+            self.assertFalse(hasattr(api, attr), attr)
+
+    def test_search_catalog_pres_cinemeta_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+
+            class Cinemeta:
+                def catalog(self, ctype, cid, genre=None, search=None, skip=0):
+                    return [{"id": "tt1", "name": "Matrix", "releaseInfo": "1999", "poster": "p", "description": "d"},
+                            {"id": "tt2", "name": "Matrix 4", "releaseInfo": "2021"}]
+            engine._cinemeta = Cinemeta()
+            out = engine.search_catalog("movie", "matrix 1999")
+            self.assertEqual([(o["id"], o["year"], o["source"]) for o in out], [("tt1", 1999, "katalog")])
+            src = (ROOT / "nokturno_core" / "engine.py").read_text(encoding="utf-8")
+            self.assertNotIn("v3-cinemeta.strem.io", src, "Cinemeta jen přes CinemetaApi")

@@ -92,3 +92,13 @@ z větve pro Home Assistant.
   desítky visících vláken) a dedup rozpracovaných dotazů na tentýž titul.
 - Úložiště: značka `.nokturno-rev` se čte nejvýš jednou za minutu (`REV_TTL`); hledání Luny má jednu
   cache (v `LunaApi`), ne dvě.
+
+## Údržba (2026-09-14)
+
+- Jedna `human_size` a jedna `fold` ve `streams.py` (dřív 4× a 2× s různým zaokrouhlením/chováním);
+  ostatní moduly je jen re-exportují, klienti importují dál z původních míst.
+- Cinemeta jen přes `CinemetaApi` (`Engine.search_catalog` měl třetího vlastního klienta).
+- User-Agent už netvrdí, že je Kodi nebo Home Assistant — `Nokturno (+github)`; `stats.send()`
+  dostává `agent` od hostitele.
+- Pryč diagnostické lešení Sledujteto (`last_keys`, `last_sample`, INFO logování), `HISTORY_MAX`,
+  `_logged` v qBittorrentu, prázdná větev v `sosac_direct.streams`; `urllib.error` importovaný explicitně.
