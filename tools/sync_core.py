@@ -7,8 +7,8 @@
     python3 tools/sync_core.py kodi ha          zapíše jen vyjmenovaným
 
 Doplněk pro Kodi načítá `resources/lib` ploše přes `sys.path`, ne jako balíček,
-takže se mu relativní importy při zápisu zplošťují (`from .store` → `from store`).
-Ostatní cíle berou soubory tak, jak jsou.
+takže se mu relativní importy při zápisu zplošťují (`from .store` → `from store`,
+v `engine.py` `from .lib.store` → `from store`). Ostatní cíle berou soubory tak, jak jsou.
 
 Cesty cílů jsou relativní k tomuhle repu: všechny větve rodiny leží vedle něj
 v `Nastroje/Nokturno/`. Cíl, který na disku není, se přeskočí — doplněk pro
@@ -23,8 +23,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CORE = ROOT / "nokturno_core"
 
-# from .modul import …  →  from modul import …   (jen uvnitř balíčku, ne stdlib)
-RELATIVE_IMPORT = re.compile(r"^from \.(\w)", re.M)
+# from .modul import …  →  from modul import …   (jen uvnitř balíčku, ne stdlib);
+# engine.py má knihovnu o úroveň níž: from .lib.modul import … → from modul import …
+RELATIVE_IMPORT = re.compile(r"^from \.(?:lib\.)?(\w)", re.M)
 
 
 class Target:
@@ -53,8 +54,8 @@ class Target:
 
 TARGETS = [
     Target("kodi", "../Kodi/plugin.video.nokturno/resources/lib",
-           engine=False, flatten=True,
-           note="logiku enginu má rozpuštěnou v default.py, bere jen knihovnu"),
+           engine=True, flatten=True,
+           note="engine.py leží ploše vedle knihovny, default.py nad ním staví KodiEngine"),
     Target("ha", "../HA/nokturno-ha/custom_components/nokturno",
            engine=True, flatten=False,
            note="vlastní const.py si drží sám, jádro mu dodá lib/const.py"),
@@ -81,6 +82,8 @@ def plan(target: Target):
         if source.name == "__init__.py" and source.parent == CORE / "lib" and target.flatten:
             continue  # ploché načítání balíček nepotřebuje
         dest = (target.lib_dir / source.name) if source.parent.name == "lib" else (target.path / source.name)
+        if target.flatten:
+            dest = target.lib_dir / source.name   # engine.py ploše mezi knihovnou
         if source.name == "__init__.py" and source.parent == CORE and not target.package:
             continue  # hostitel (Kodi, HA) má vlastní __init__.py, nepřepisovat
         new = render(source, target.flatten)

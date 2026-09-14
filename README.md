@@ -14,7 +14,7 @@ z `homeassistant`, což hlídá test.
 
 | Konzument | Bere | Poznámka |
 |---|---|---|
-| [plugin.video.nokturno](https://github.com/matata86/plugin.video.nokturno) | `lib/` | doplněk pro Kodi; logiku enginu má rozpuštěnou v `default.py` |
+| [plugin.video.nokturno](https://github.com/matata86/plugin.video.nokturno) | `lib/` + `engine.py` (ploše) | doplněk pro Kodi; `default.py` nad jádrem staví `KodiEngine` |
 | [nokturno-ha](https://github.com/matata86/nokturno-ha) | `lib/` + `engine.py` | integrace pro Home Assistant |
 | [nokturno-stremio](https://github.com/matata86/nokturno-stremio) | vše | doplněk pro Stremio |
 

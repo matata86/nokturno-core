@@ -19,7 +19,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from nokturno_core import Engine, split_episode_id                    # noqa: E402
+from nokturno_core import Engine, NokturnoError, split_episode_id     # noqa: E402
 from nokturno_core.lib import const, streams, enrich, webshare_api    # noqa: E402
 
 
@@ -204,6 +204,69 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
         for s in direct:
             streams.parse_stream(s)
         self.assertEqual(len(Engine._merge_direct(direct)), 30)
+
+    def test_radek_luny_slouci_kopii_z_jejiho_hledani_i_primy_nalez(self):
+        """Extraktoři 2x06: tentýž soubor přišel jako Lunin řádek, kopie z Lunina
+        hledání (bez názvu) a přímý nález z WebShare — má zůstat jeden řádek Luny
+        (nese jazyky) s přibaleným přímým odkazem. Jiný soubor podobné velikosti zůstane."""
+        luna = {"source": "main", "label": "(WS) Full HD", "detail": "2.4 GB | Zvuk: CZ 2.0", "url": "l"}
+        search = {"source": "search", "label": "(WS) Full HD", "detail": "2.4 GB", "url": "s"}
+        ws = {"source": "ws", "label": "Extraktori.2x06.1080p.mkv", "detail": "2.5 GB", "url": "ws:1", "_direct": True}
+        daleko = {"source": "ws", "label": "Extraktori.2x06.jiny.1080p.mkv", "detail": "3.0 GB", "url": "ws:2",
+                  "_direct": True}
+        rows = [luna, search, ws, daleko]
+        for s in rows:
+            streams.parse_stream(s)
+        out = Engine._merge_direct(rows)
+        self.assertEqual([s["url"] for s in out], ["l", "ws:2"])
+        self.assertEqual(out[0]["_ws_url"], "ws:1")
+        # bez Luny se přímé nálezy nesrovnávají na nic a zůstávají všechny různé
+        rows = [{"source": "ws", "label": "a.mkv", "detail": "1 GB", "url": "1", "_direct": True},
+                {"source": "hs", "label": "b.mkv", "detail": "1 GB", "url": "2", "_direct": True}]
+        for s in rows:
+            streams.parse_stream(s)
+        self.assertEqual(len(Engine._merge_direct(rows)), 2)
+
+    def test_volby_kodi_audio_probe_fresh_a_uvolneny_filtr(self):
+        """Volby, které si doplněk pro Kodi bere z nastavení: limit čtení hlaviček,
+        zahřívání bez čtení cache a uvolněný fulltext značený `_loose` mimo cache."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"audio_probe": "0"}, tmp)
+            rows = [{"url": "ws:1", "label": "a", "detail": "1 GB"}]
+            counts = []
+            self.assertEqual(engine._fill_audio(rows, on_count=counts.append), rows)
+            self.assertEqual(counts, [0], "s vypnutým čtením hlaviček se nic nečte a průběh o tom ví")
+            engine = Engine({"audio_probe": "abc"}, tmp)
+            engine._media_from_file = lambda url: {}
+            engine._fill_audio(rows, on_count=counts.append)
+            self.assertEqual(counts[-1], 1, "nesmysl v nastavení = výchozí limit")
+
+            # fresh: cache streamů se jen zapíše, nečte
+            calls = []
+            engine = Engine({"fresh": True}, tmp)
+            engine.store.cached_if("k", 3600, lambda: {"stara": 1})
+            self.assertEqual(engine.store.cached_if("k", 3600, lambda: calls.append(1) or {"nova": 1}, fresh=True),
+                             {"nova": 1})
+            self.assertEqual(engine.store.cached_if("k", 3600, lambda: {"treti": 1}), {"nova": 1})
+
+            # strict=False: zdroje s uvolněným filtrem, řádky `_loose`, žádná cache
+            engine = Engine({}, tmp)
+            engine.meta = lambda *a, **k: ({"name": "Film", "year": 2020}, None)
+            engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError("není nastaven"))
+            seen = {}
+            def ws_streams(meta, video=None, ctype="movie", alt=None, strict=True, failures=None):
+                seen["strict"] = strict
+                return [{"url": "ws:1", "label": "Film.2020.mkv", "detail": "1.2 GB", "source": "ws", "_direct": True}]
+            engine._webshare_streams = ws_streams
+            engine._webshare_subtitles = lambda *a, **k: []
+            engine._fill_audio = lambda rows, *a, **k: rows
+            out = engine.raw_streams("movie", "tt1", strict=False)
+            self.assertFalse(seen["strict"])
+            self.assertTrue(out and out[0]["_loose"])
+            self.assertIsNone(engine.store.cached_if("streams5:movie:tt1:", 3600, lambda: None), "uvolněný výsledek se necachuje")
+            out = engine.raw_streams("movie", "tt1")
+            self.assertTrue(seen["strict"])
+            self.assertFalse(out[0].get("_loose"))
 
     def test_prisny_filtr_s_kratkym_slovem_v_nazvu(self):
         """„Harry Potter a Kámen mudrců": krátké „a" nesmí shodit přesnou shodu."""
