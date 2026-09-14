@@ -300,6 +300,11 @@ class TestStoreSdilenyViceProcesy(unittest.TestCase):
         self.assertEqual(len(d.catalog("movie", "moviesmostpopular")), 5)
         self.assertEqual(saves.count("sosac_index"), 1)
         self.assertEqual(index.item("idx:sosacd_m_l3")["name"], "Film 3")
+        d.catalog("movie", "moviesmostpopular")
+        self.assertEqual(saves.count("sosac_index"), 1, "stejný seznam podruhé bez zápisu")
+        d._get = lambda url, ttl=None: [{"n": {"cs": "Nový film"}, "m": "9", "l": "l9"}]
+        d.catalog("movie", "moviesmostpopular")
+        self.assertEqual(saves.count("sosac_index"), 2, "nový titul se zapíše")
 
     def test_zalozeni_rejstriku_nesaha_na_disk(self):
         """HA zakládá rejstřík z atributů senzoru ve smyčce událostí — tam žádné `open()`."""
