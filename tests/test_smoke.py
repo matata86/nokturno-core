@@ -288,6 +288,19 @@ class TestStoreSdilenyViceProcesy(unittest.TestCase):
         self.assertEqual(index.item("tt1")["title"], "film", "snímek přehraného titulu přes rejstřík")
         self.assertTrue(pathlib.Path(self.tmp, "sosac_index.json").exists())
 
+    def test_vypis_sosace_zapise_rejstrik_jednou(self):
+        """Rejstřík má přes megabajt — zápis po položkách dělal na Office z 47 filmů 45 s."""
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        index = self.a.index()
+        saves = []
+        orig = self.a.save
+        self.a.save = lambda name, data: (saves.append(name), orig(name, data))
+        d = SosacDirect(index_store=index)
+        d._get = lambda url, ttl=None: [{"n": {"cs": f"Film {i}"}, "m": str(i), "l": f"l{i}"} for i in range(5)]
+        self.assertEqual(len(d.catalog("movie", "moviesmostpopular")), 5)
+        self.assertEqual(saves.count("sosac_index"), 1)
+        self.assertEqual(index.item("idx:sosacd_m_l3")["name"], "Film 3")
+
     def test_zalozeni_rejstriku_nesaha_na_disk(self):
         """HA zakládá rejstřík z atributů senzoru ve smyčce událostí — tam žádné `open()`."""
         self.a.remember_item("idx:sosacd_m_1", {"name": "starý rejstřík"})
