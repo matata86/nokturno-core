@@ -8,6 +8,8 @@ a na trackerech přes Prowlarr — bez vazby na hostitele.
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
 z `homeassistant`, což hlídá test.
 
+> **Patří k sobě:** nad tímhle jádrem stojí [**Nokturno pro Kodi**](https://github.com/matata86/plugin.video.nokturno), [**Nokturno pro Home Assistant**](https://github.com/matata86/nokturno-ha) a [**Nokturno pro Stremio**](https://github.com/matata86/nokturno-stremio) (i Nuvio) — tři samostatné doplňky nad stejnými zdroji.
+
 ## Kdo z toho žije
 
 | Konzument | Bere | Poznámka |
