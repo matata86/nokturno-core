@@ -46,7 +46,8 @@ class TestJadroJeSamostatne(unittest.TestCase):
             engine = Engine({}, tmp)
             self.assertEqual(engine.sources(),
                              {"luna": False, "sosac": False, "webshare": False,
-                              "hellspy": False, "sledujteto": False, "storage": False, "torrent": False})
+                              "hellspy": False, "sledujteto": False, "fastshare": False, "storage": False,
+                              "torrent": False})
 
     def test_rozpad_id_epizody(self):
         self.assertEqual(split_episode_id("tt0903747:2:5"), ("tt0903747", 2, 5))
@@ -64,6 +65,7 @@ class TestCoVyzadujeKodi(unittest.TestCase):
         "enrich": ("enrich", "enrich_one"),
         "hellspy_api": ("HellspyApi", "HellspyError"),
         "sledujteto_api": ("SledujtetoApi", "SledujtetoError"),
+        "fastshare_api": ("FastshareApi", "FastshareError"),
         "mediainfo": ("describe", "probe", "quality_from_size"),
         "store": ("Store", "migrate_profile"),
         "sync": ("sync_once",),
@@ -609,6 +611,143 @@ class TestSledujtetoMedia(unittest.TestCase):
             self.assertEqual(popis["audio"], [{"lang": "CZ", "channels": "5.1", "codec": "AC3"}])
             self.assertEqual(popis["channels"], {"CZ": "5.1"})
 
+
+
+class TestFastshare(unittest.TestCase):
+    """Klient FastShare bez sítě — odpovědi ve tvaru z `api_kodi.php` (ověřeno živě 2026-09-14)."""
+
+    SOUBOR = {"id": "11331345", "filename": "Matrix 1 (1999) CZ dabing.mkv",
+              "data": {"unit": "B", "value": "4207430497"},
+              "download_url": "https://data4.fastshare.cloud/download.php?id=11331345",
+              "resolution": "1920x800", "duration": {"unit": "s", "value": "8178"},
+              "thumbnail": "https://img.fastshare.cloud/t.jpg"}
+
+    def setUp(self):
+        from nokturno_core.lib import fastshare_api as fs
+        from nokturno_core.lib.store import Store
+        self.fs = fs
+        self.store = Store(tempfile.mkdtemp())
+        self.calls = []
+        self._orig = fs.urllib.request.urlopen
+
+    def tearDown(self):
+        self.fs.urllib.request.urlopen = self._orig
+
+    def _server(self, handler):
+        import io, urllib.error, urllib.parse
+        test = self
+
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(req, timeout=None):
+            params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(req.full_url).query))
+            test.calls.append(params)
+            status, body = handler(params)
+            data = json.dumps(body).encode()
+            if status >= 400:
+                raise urllib.error.HTTPError(req.full_url, status, "err", {}, io.BytesIO(data))
+            return Resp(data)
+        self.fs.urllib.request.urlopen = urlopen
+
+    def _login(self, credit="5000", unlimited="False"):
+        return 200, {"user": {"hash": "H1", "unlimited": unlimited, "data": {"value": credit}}}
+
+    def test_hledani_bez_prihlaseni(self):
+        self._server(lambda p: (200, {"search": {"total": "2", "file": [
+            self.SOUBOR, {**self.SOUBOR, "id": "9", "download_url": "https://jinde.cz/download.php?id=9"}]}}))
+        files, total = self.fs.FastshareApi("u", "p", cache=self.store).search("matrix")
+        self.assertEqual(total, 2)
+        self.assertEqual(len(files), 1, "soubor z cizího serveru se nevrátí")
+        f = files[0]
+        self.assertEqual((f["id"], f["server"], f["size"], f["duration"]), ("11331345", "data4", 4207430497, 8178))
+        self.assertEqual((f["media"]["width"], f["media"]["height"]), (1920, 800))
+        self.assertEqual(self.fs.make_ref(f), "fs:11331345:data4:4207430497")
+        self.assertNotIn("login", self.calls[0])
+        self.fs.FastshareApi("u", "p").search("Pelíšky")
+        self.assertEqual(self.calls[-1]["term"], "Pelisky", "FastShare diakritiku v dotazu nezvládá")
+
+    def test_odkaz_s_cookie_a_hash_se_pamatuje(self):
+        self._server(lambda p: self._login())
+        api = self.fs.FastshareApi("u", "tajne", cache=self.store)
+        url, headers = api.request("fs:11331345:data4:1000")
+        self.assertEqual(url, "https://data4.fastshare.cloud/download.php?id=11331345")
+        self.assertEqual(headers["Cookie"], "FASTSHARE=H1")
+        self.assertIn("|Cookie=FASTSHARE%3DH1", api.kodi_url("fs:11331345:data4:1000"))
+        # druhý klient nad stejným úložištěm se znovu nepřihlašuje
+        self.fs.FastshareApi("u", "tajne", cache=self.store).request("fs:1:data4:1000")
+        self.assertEqual(sum(1 for c in self.calls if c.get("process") == "login"), 1)
+
+    def test_malo_kreditu_srozumitelna_chyba(self):
+        self._server(lambda p: self._login(credit="100"))
+        with self.assertRaises(self.fs.FastshareError) as ctx:
+            self.fs.FastshareApi("u", "p").request("fs:1:data4:4207430497")
+        self.assertIn("kredit", str(ctx.exception))
+        # neomezený tarif kredit nehlídá
+        self._server(lambda p: self._login(credit="0", unlimited="True"))
+        self.assertTrue(self.fs.FastshareApi("u", "p").request("fs:1:data4:4207430497")[0])
+
+    def test_spatne_heslo_a_cizi_odkaz(self):
+        self._server(lambda p: (401, {"response": "INVALID_LOGIN"}))
+        with self.assertRaises(self.fs.FastshareError) as ctx:
+            self.fs.FastshareApi("u", "spatne").login()
+        self.assertIn("jméno a heslo", str(ctx.exception))
+        self.assertNotIn("spatne", str(ctx.exception))
+        for ref in ("fs:1:evil.com", "fs:1:data4.evil", "fs:x:data4", "https://data4.fastshare.cloud/x"):
+            with self.assertRaises(self.fs.FastshareError):
+                self.fs.parse_ref(ref)
+
+
+class TestFastshareVJadru(unittest.TestCase):
+    def test_streamy_filtr_a_prehrani(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"fs_username": "u", "fs_password": "p"}, tmp)
+            self.assertTrue(engine.sources()["fastshare"])
+
+            class Fake:
+                def search(self, query, limit=25):
+                    return ([{"id": "1", "server": "data4", "name": "Matrix (1999) CZ dabing.mkv", "size": 4 * 2 ** 30,
+                              "size_h": "4.00 GB", "duration": 8178, "media": {"width": 1920, "height": 800}},
+                             {"id": "2", "server": "data4", "name": "Matrix Reloaded (2003).mkv", "size": 1,
+                              "size_h": "", "media": {}}], 2)
+
+                def request(self, ref):
+                    return "https://data4.fastshare.cloud/download.php?id=1", {"Cookie": "FASTSHARE=H"}
+
+                def kodi_url(self, ref):
+                    return "https://data4.fastshare.cloud/download.php?id=1|Cookie=FASTSHARE%3DH"
+
+            engine._fs = Fake()
+            found = engine._fastshare_streams({"name": "Matrix", "year": 1999}, None, "movie")
+            self.assertEqual([s["url"] for s in found], [f"fs:1:data4:{4 * 2 ** 30}"], "Reloaded je jiný titul")
+            self.assertEqual(found[0]["quality"], "Full HD")
+            self.assertIn("|Cookie=", engine.resolve(found[0]["url"]))
+            self.assertEqual(engine.file_request(found[0]["url"])[1], {"Cookie": "FASTSHARE=H"})
+
+    def test_bez_uctu_neni_zdroj_a_hlavicka_se_cte(self):
+        from nokturno_core import NokturnoError
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"fs_username": "u"}, tmp)
+            self.assertIsNone(engine.fs)
+            with self.assertRaises(NokturnoError):
+                engine.resolve("fs:1:data4:1")
+
+    def test_hlavicka_jen_s_neomezenym_stahovanim(self):
+        for unlimited, cekano in ((False, []), (True, ["fs:1:data4:10"])):
+            with tempfile.TemporaryDirectory() as tmp:
+                engine = Engine({"audio_probe": 24}, tmp)
+
+                class Ucet:
+                    def account(self, unlimited=unlimited):
+                        return {"hash": "H", "unlimited": unlimited, "credit_mb": 25000}
+
+                engine._fs = Ucet()
+                ctene = []
+                engine._media_from_file = lambda url: ctene.append(url) or {}
+                engine._fill_audio([{"url": "fs:1:data4:10", "label": "Film.mkv", "source": "fs"},
+                                    {"url": "https://x/y.mkv", "label": "Jiny.mkv"}])
+                self.assertEqual(ctene, cekano, "na kredit se hlavička FastShare nečte")
 
 
 class TestCeskyNazevZWikidat(unittest.TestCase):

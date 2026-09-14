@@ -2,7 +2,7 @@
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-podpo%C5%99%20autora-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/matata86) [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
 
-Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, Luně
+Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, Luně
 a na trackerech přes Prowlarr — bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
@@ -77,9 +77,9 @@ z větve pro Home Assistant.
 
 ## Výkon (od 2026-09-14)
 
-- `Engine.streams()` se čtyř zdrojů (Luna/Sosáč, WebShare, HellSpy, Sledujteto) ptá
+- `Engine.streams()` se pěti zdrojů (Luna/Sosáč, WebShare, HellSpy, Sledujteto, FastShare) ptá
   **souběžně** (`ThreadPoolExecutor`), pořadí výsledků drží kvůli párování v `_merge_direct`.
-  Líné klienty (`ws`, `hs`, `st`, `sosac`) zakládá před spuštěním vláken.
+  Líné klienty (`ws`, `hs`, `st`, `fs`, `sosac`) zakládá před spuštěním vláken.
 - `original_titles()` se za jeden výpis počítá jednou (paměť v enginu, 5 min; po výpadku
   Wikidat jen 30 s, aby další výpis zkusil znovu) — dřív pětkrát, při výpadku Wikidat až 100 s navíc.
 - WebShare: selhání loginu už nezamkne zdroj do restartu (`WS_RETRY_S = 60`); re-login jen když
