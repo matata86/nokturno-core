@@ -1217,3 +1217,19 @@ class TestUdrzbaJadra(unittest.TestCase):
             self.assertEqual([(o["id"], o["year"], o["source"]) for o in out], [("tt1", 1999, "katalog")])
             src = (ROOT / "nokturno_core" / "engine.py").read_text(encoding="utf-8")
             self.assertNotIn("v3-cinemeta.strem.io", src, "Cinemeta jen přes CinemetaApi")
+
+
+class TestProrezavaniCache(unittest.TestCase):
+    def test_prune_cache_smaze_jen_stare(self):
+        import os
+        from nokturno_core.lib.store import Store
+        tmp = tempfile.mkdtemp()
+        store = Store(tmp)
+        store.cached("a", 10, lambda: {"x": 1})
+        store.cached("b", 10, lambda: {"x": 2})
+        cache = pathlib.Path(tmp) / "cache"
+        stary = sorted(cache.glob("*.json"))[0]
+        os.utime(stary, (time.time() - 5 * 86400,) * 2)
+        self.assertEqual(store.prune_cache(72 * 3600), 1)
+        self.assertEqual(len(list(cache.glob("*.json"))), 1)
+        self.assertEqual(Store(tempfile.mkdtemp()).prune_cache(), 0, "bez složky cache nic")
