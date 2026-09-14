@@ -716,6 +716,24 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TestPython38(unittest.TestCase):
+    """Kodi 20 na Androidu a Windows běží s Pythonem 3.8 — co je novější, tam tiše chybí."""
+
+    ZAKAZANE_METODY = {"removeprefix", "removesuffix", "is_relative_to", "with_stem"}
+
+    def test_zadna_syntaxe_ani_metoda_z_3_9(self):
+        chyby = []
+        for path in sorted(ROOT.glob("nokturno_core/**/*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr in self.ZAKAZANE_METODY:
+                    chyby.append(f"{path.name}:{node.lineno} .{node.attr}()")
+                if type(node).__name__ in ("Match", "MatchValue"):
+                    chyby.append(f"{path.name}:{node.lineno} match")
+                # `dict | dict` a `list[str]` mimo anotace jdou poznat jen za běhu — hlídá CI s 3.8
+        self.assertEqual(chyby, [])
+
+
 class TestOpravyZAuditu(unittest.TestCase):
     """Čtyři nálezy auditu 2026-09-14 — každý byl v ostrém provozu vidět jako pád,
     únik nebo díra, a každý má tady regresi."""

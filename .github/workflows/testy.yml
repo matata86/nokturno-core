@@ -1,0 +1,15 @@
+name: testy
+on: [push, pull_request]
+jobs:
+  testy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.8", "3.12"]   # 3.8 = Kodi 20 na Androidu a Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m compileall -q nokturno_core
+      - run: python -m unittest discover -s tests -v
