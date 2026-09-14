@@ -620,5 +620,26 @@ class TestTmdbKatalogy(unittest.TestCase):
         self.assertTrue(any(p == "/discover/tv" and q.get("first_air_date_year") == "1996" for p, q in volani))
 
 
+
+class TestSosacBezOdkazu(unittest.TestCase):
+    """Čerstvě přidané filmy mají v exportu „l": null — prázdné id nešlo otevřít."""
+
+    def test_film_bez_odkazu_dostane_imdb_id(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        d = SosacDirect()
+        m = d.movie_meta({"n": {"cs": "Chci tě!"}, "y": "2026", "m": "32332915", "l": None})
+        self.assertEqual(m["id"], "tt32332915")
+        self.assertEqual(m["imdb_id"], "tt32332915")
+
+    def test_film_bez_odkazu_i_imdb_vypadne(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        self.assertIsNone(SosacDirect().movie_meta({"n": {"cs": "Nic"}, "l": None}))
+
+    def test_film_s_odkazem_zustava(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect
+        m = SosacDirect().movie_meta({"n": {"cs": "Harry"}, "m": "0241527", "l": "35da"})
+        self.assertEqual(m["id"], "sosacd_m_35da")
+
+
 if __name__ == "__main__":
     unittest.main()
