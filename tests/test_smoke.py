@@ -193,6 +193,49 @@ class TestStats(unittest.TestCase):
         self.stats.note_play("sosacd_m_x")
         self.assertIn("sosacd_m_x", self.stats.data["plays"])
 
+    def test_zprava_v_odpovedi_se_zachyti_a_msg_seen_se_posle_priste(self):
+        """Server vrátí `message` — `send()` ji uloží do `last_message`, klient po
+        zobrazení zavolá `mark_message_seen()` a příští hlášení už nese `msg_seen`."""
+        class Resp:
+            def __init__(self, body):
+                self.body = body
+
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1): return self.body
+            def getcode(self): return 200
+
+        import urllib.request
+        from unittest import mock
+        body = json.dumps({"ok": True, "message": {"id": 5, "text": "Nová verze!"}}).encode("utf-8")
+        with mock.patch.object(urllib.request, "urlopen", lambda req, timeout=None: Resp(body)):
+            ok, why = self.stats.send("https://x/collect", version="3.1.9", product="kodi", ping=True)
+        self.assertEqual((ok, why), (True, ""))
+        self.assertEqual(self.stats.last_message, {"id": 5, "text": "Nová verze!"})
+
+        self.stats.mark_message_seen(5)
+        sent = {}
+        with mock.patch.object(urllib.request, "urlopen",
+                               lambda req, timeout=None: (sent.update(json.loads(req.data)), Resp(b"{}"))[1]):
+            self.stats.send("https://x/collect", version="3.1.9", product="kodi", ping=True)
+        self.assertEqual(sent["msg_seen"], 5)
+        self.assertIsNone(self.stats.last_message, "prázdná odpověď = žádná (nová) zpráva")
+
+    def test_stara_odpoved_bez_message_nerozbije_odeslani(self):
+        """Odpověď bez `message` (starší chování serveru, nebo prázdné tělo) nesmí spadnout."""
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1): return b'{"ok": true}'
+            def getcode(self): return 200
+
+        import urllib.request
+        from unittest import mock
+        with mock.patch.object(urllib.request, "urlopen", lambda req, timeout=None: Resp()):
+            ok, why = self.stats.send("https://x/collect", version="3.1.9", product="kodi", ping=True)
+        self.assertEqual((ok, why), (True, ""))
+        self.assertIsNone(self.stats.last_message)
+
 
 class TestSlucovaniPrimychStreamu(unittest.TestCase):
     def test_osamocene_soubory_se_neorezavaji(self):
@@ -667,6 +710,24 @@ class TestFastshare(unittest.TestCase):
         self.assertNotIn("login", self.calls[0])
         self.fs.FastshareApi("u", "p").search("Pelíšky")
         self.assertEqual(self.calls[-1]["term"], "Pelisky", "FastShare diakritiku v dotazu nezvládá")
+
+    def test_hledani_prezije_spatne_zakodovany_bajt_v_odpovedi(self):
+        """FastShare umí poslat v názvu souboru bajt, co do UTF-8 nepatří (Office 2026-09-14,
+        „The Matrix 1999" spadlo na pozici 12320 uprostřed výpisu) — nahradí se, ne pád."""
+        import io
+        spatne = (b'{"search": {"total": "1", "file": [{"id": "1", '
+                 b'"filename": "Matrix \xed video.mkv", "data": {"unit": "B", "value": "1"}, '
+                 b'"download_url": "https://data4.fastshare.cloud/download.php?id=1", '
+                 b'"resolution": "0x0", "duration": {"unit": "s", "value": "0"}, "thumbnail": ""}]}}')
+
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        self.fs.urllib.request.urlopen = lambda req, timeout=None: Resp(spatne)
+        files, total = self.fs.FastshareApi("u", "p", cache=self.store).search("matrix")
+        self.assertEqual(total, 1)
+        self.assertIn("Matrix", files[0]["name"])
 
     def test_odkaz_s_cookie_a_hash_se_pamatuje(self):
         self._server(lambda p: self._login())
@@ -1280,6 +1341,56 @@ class TestVykonJadra2(unittest.TestCase):
         self.assertEqual([i["id"] for i in items], ["tt10", "tt11"])
         self.assertEqual(len([c for c in cesty if c.startswith("/movie/")]), 2, "1 dotaz na položku, ne 2")
         self.assertEqual(items[0]["genres"], ["Akční"])
+
+    def test_tmdb_detail_obsazeni_hlasy_trailer_rating(self):
+        """Obsazení s fotkou a rolí, počet hlasů, věkový rating (přednost CZ před US)
+        a YouTube id traileru (přednost oficiálnímu traileru před jiným videem)."""
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        api = TmdbApi("k")
+
+        def get(path, **params):
+            if path.startswith("/find/"):
+                return {"movie_results": [{"id": 7}]}
+            if path == "/movie/7":
+                self.assertEqual(params.get("append_to_response"), "credits,images,videos,release_dates")
+                return {
+                    "title": "Film", "vote_average": 8.1, "vote_count": 12345, "images": {},
+                    "credits": {"cast": [{"name": "Herec", "character": "Role", "profile_path": "/h.jpg"},
+                                        {"name": "Bez fotky", "character": "X"}]},
+                    "release_dates": {"results": [
+                        {"iso_3166_1": "US", "release_dates": [{"certification": "R"}]},
+                        {"iso_3166_1": "CZ", "release_dates": [{"certification": "15"}]},
+                    ]},
+                    "videos": {"results": [{"site": "YouTube", "type": "Teaser", "key": "teaser1"},
+                                           {"site": "YouTube", "type": "Trailer", "key": "trailer1"}]},
+                }
+            raise AssertionError(path)
+        api._get = get
+        meta = api.meta("movie", "tt7")
+        self.assertEqual(meta["cast"], [{"name": "Herec", "character": "Role",
+                                         "photo": "https://image.tmdb.org/t/p/w500/h.jpg"},
+                                        {"name": "Bez fotky", "character": "X", "photo": ""}])
+        self.assertEqual(meta["voteCount"], 12345)
+        self.assertEqual(meta["mpaa"], "15", "český rating má přednost před americkým")
+        self.assertEqual(meta["trailerYoutubeId"], "trailer1", "skutečný trailer má přednost před teaserem")
+
+    def test_tmdb_serial_rating_bez_ceskeho_spadne_na_americky(self):
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        api = TmdbApi("k")
+
+        def get(path, **params):
+            if path.startswith("/find/"):
+                return {"tv_results": [{"id": 8}]}
+            if path == "/tv/8":
+                self.assertEqual(params.get("append_to_response"), "credits,images,videos,content_ratings")
+                return {"name": "Serial", "images": {},
+                       "content_ratings": {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}}
+            raise AssertionError(path)
+        api._get = get
+        meta = api.meta("series", "tt8")
+        self.assertEqual(meta["mpaa"], "TV-14")
+        self.assertEqual(meta["voteCount"], 0)
+        self.assertEqual(meta["trailerYoutubeId"], "")
 
     def test_tmdb_sezony_soubezne(self):
         from nokturno_core.lib.tmdb_api import TmdbApi
