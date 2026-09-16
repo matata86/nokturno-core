@@ -19,7 +19,7 @@ from datetime import datetime
 
 from .lib.const import CONF_HS_ENABLED, DEFAULT_SORT, LANGS, SORT_ORDERS
 from .lib.cinemeta_api import CinemetaApi, CinemetaError
-from .lib.enrich import DEAD_IMAGES, _cinemeta, _fetch, _fetch_title, enrich, enrich_one
+from .lib.enrich import DEAD_IMAGES, _capped, _cinemeta, _fetch, _fetch_title, enrich, enrich_one
 from .lib.luna_api import LunaApi, LunaError, clean_label, parse_base_url, parse_token
 from .lib.tmdb_api import TmdbApi, TmdbError
 from .lib.prowlarr import ProwlarrApi, ProwlarrError
@@ -547,9 +547,15 @@ class Engine:
         return merged
 
     @staticmethod
-    def _art(url):
-        """Mrtvé náhledy Sosáče neposílat — v kartě je lepší podklad než rozbitý obrázek."""
-        return "" if DEAD_IMAGES in (url or "") else (url or "")
+    def _art(url, size=None):
+        """Mrtvé náhledy Sosáče neposílat — v kartě je lepší podklad než rozbitý obrázek.
+
+        Syrová data ze Sosáče (`art.fanart`/`art.landscape`) i Cinemety chodí v plné
+        `original` velikosti TMDB obrázku — desítky MB na kus jako dekódovaná bitmapa
+        v prohlížeči. `size` (např. „w500"/„w1280") to ořízne na rozumnou velikost."""
+        if DEAD_IMAGES in (url or ""):
+            return ""
+        return _capped(url, size) if size else (url or "")
 
     def _item(self, meta, ctype, alt=None):
         return {
@@ -558,8 +564,8 @@ class Engine:
             "title": meta.get("_title") or meta.get("name") or "",
             "original_title": meta.get("_orig") or "",
             "year": self._year(meta),
-            "poster": self._art(meta.get("poster")),
-            "background": self._art(meta.get("background")),
+            "poster": self._art(meta.get("poster"), "w500"),
+            "background": self._art(meta.get("background"), "w1280"),
             "description": (meta.get("description") or "")[:4000],
             "rating": meta.get("imdbRating") or "",
             "source": meta.get("source") or ("sosac" if is_sosac_id(meta.get("id")) else "luna"),
@@ -742,8 +748,8 @@ class Engine:
                 "type": ctype,
                 "title": meta.get("name") or "",
                 "year": int(year) if year.isdigit() else None,
-                "poster": meta.get("poster") or "",
-                "background": meta.get("background") or "",
+                "poster": self._art(meta.get("poster"), "w500"),
+                "background": self._art(meta.get("background"), "w1280"),
                 "description": (meta.get("description") or "")[:4000],
                 "source": "katalog",
                 "alt": None,
@@ -786,8 +792,8 @@ class Engine:
             "type": kind,
             "title": self._local_title(kind, meta.get("name") or "", year_num) or meta.get("name") or "",
             "year": year_num,
-            "poster": meta.get("poster") or "",
-            "background": meta.get("background") or "",
+            "poster": self._art(meta.get("poster"), "w500"),
+            "background": self._art(meta.get("background"), "w1280"),
             "description": (meta.get("description") or self._summary(meta))[:4000],
             "rating": meta.get("imdbRating") or "",
             "genres": meta.get("genres") or [],
@@ -1864,8 +1870,16 @@ class Engine:
         return [self._describe(s, i) for i, s in enumerate(ordered)]
 
     def raw_streams(self, ctype, item_id, alt=None, series_id=None, on_progress=None, failures=None,
-                    strict=True, meta_video=None):
+                    strict=True, meta_video=None, probe_audio=True, on_source_done=None):
         """Seřazené streamy titulu ze všech dostupných zdrojů — surové slovníky.
+
+        `probe_audio=False`: vynechá `_fill_audio()` (čtení hlaviček souborů) — pro
+        případy, kdy stačí odhad jazyka z popisku/názvu (Sosáč, Luna a `langs_from_name`/
+        `subs_from_name` u ostatních zdrojů), ne ověřená zvuková stopa. Používá se pro
+        hromadnou klasifikaci (desítky titulů), kde by čtení hlaviček u každého bylo
+        neúnosně pomalé. Nejde přes 72h cache (`cache_key` výš) — jinak by takhle
+        odlehčený výsledek na 72 h zablokoval opravdové ověření hlaviček v dialogu
+        streamů pro tentýž titul.
 
         Síťové dohledání streamů se cachuje 72 h, ale JEN když něco našlo (`cached_if`) —
         prázdný výsledek by mohl být jen dočasný výpadek zdroje, takže se zkusí znovu
@@ -1884,6 +1898,11 @@ class Engine:
         `strict=False` = ruční „zkusit uvolněný fulltext“: WebShare/HellSpy/Sledujteto
         s volnějším filtrem názvu (viz `_title_queries`), výsledek značený `_loose`
         a mimo cache. `meta_video`: (meta, video) už načtené volajícím, ať se nečtou dvakrát.
+
+        `on_source_done(label, count)`, je-li dán, se volá po dokončení každého jednotlivého
+        zdroje (na rozdíl od `on_progress` ví odkud a kolik) — jen při čerstvém hledání,
+        cache hit ho vůbec nespustí. Volající si z toho může postavit průběžný přehled
+        „WebShare: 12 · HellSpy: 3…“ místo pouhého procenta.
         """
         failures = [] if failures is None else failures
         total = self.STREAM_SOURCE_STEPS + AUDIO_PROBE_MAX
@@ -1921,6 +1940,8 @@ class Engine:
                     failures.append(("Sosáč" if is_sosac_id(base_id) else "Luna", err))
                 found = []
             tick()
+            if on_source_done:
+                on_source_done("Sosáč" if is_sosac_id(base_id) else "Luna", len(found))
             # titul otevřený jen podle IMDb id (z databáze filmů) má v metadatech mezinárodní přepis
             # („Sunday League…“), pod kterým Sosáč nic nenajde — podstrčíme mu český název z TMDB
             if not found and not alt and not is_sosac_id(base_id) and str(base_id).startswith("tt"):
@@ -1947,8 +1968,11 @@ class Engine:
                     return []
             with ThreadPoolExecutor(max_workers=len(zdroje)) as pool:
                 futures = [pool.submit(bezpecne, label, fetch) for label, fetch in zdroje]
+                label_by_future = dict(zip(futures, (label for label, _fetch in zdroje)))
                 for future in as_completed(futures):
                     tick()
+                    if on_source_done:
+                        on_source_done(label_by_future[future], len(future.result()))
                 # pořadí zdrojů drží (Luna/Sosáč napřed) — na něm stojí párování v _merge_direct
                 for future in futures:
                     found += future.result()
@@ -1983,20 +2007,27 @@ class Engine:
         # „streams2“: seznamy uložené před doplněním českých názvů z Wikidat byly u titulů
         # bez Luny/TMDB ořezané přísným filtrem — nový klíč je jednorázově obnoví
         cache_key = f"streams5:{ctype}:{item_id}:{alt or ''}"   # 5 = oprava filtru (krátké slovo na začátku názvu)
-        if strict:
+        if strict and probe_audio:
             found = self.store.cached_if(cache_key, STREAMS_CACHE_TTL, _fetch_streams,
                                          ok=lambda data: bool(data) and not failures,
                                          fresh=bool(self._opt("fresh", False)))
         else:
             found = _fetch_streams()
         # vlastní úložiště mimo 72h cache streamů — nový soubor se má ukázat hned,
-        # jak ho uvidí seznam úložiště (ten si drží vlastní hodinovou paměť)
-        try:
-            local = self._storage_streams(meta, video, ctype, alt, failures=failures)
-        except Exception as err:  # noqa: BLE001 – úložiště nesmí shodit ostatní zdroje
-            _LOGGER.warning("streamy %s (úložiště): %s", item_id, err)
-            failures.append(("Úložiště", err))
-            local = []
+        # jak ho uvidí seznam úložiště (ten si drží vlastní hodinovou paměť). S
+        # `probe_audio=False` (hromadná klasifikace) se přeskakuje úplně — cizí
+        # úložiště titul ze Sosáčova katalogu stejně nerozhodne a při nedostupném
+        # NAS/DAV to bez vlastní cache dusí každého jednoho kandidáta zvlášť.
+        local = []
+        if probe_audio:
+            try:
+                local = self._storage_streams(meta, video, ctype, alt, failures=failures)
+            except Exception as err:  # noqa: BLE001 – úložiště nesmí shodit ostatní zdroje
+                _LOGGER.warning("streamy %s (úložiště): %s", item_id, err)
+                failures.append(("Úložiště", err))
+                local = []
+        if on_source_done:
+            on_source_done("Vlastní úložiště", len(local))
         for stream in local:
             parse_stream(stream)
             if not stream.get("quality_rank"):
@@ -2029,7 +2060,8 @@ class Engine:
         # a před seřazením se rozpočet utratil za řádky, které skončí dole; teď padne
         # na začátek seznamu, tedy na to, co má uživatel před očima. Po doplnění
         # kanálů se řadí znovu, protože 5.1 může pořadím pohnout.
-        ordered = sort(self._ensure_bitrate(self._fill_audio(sort(found), tick, on_count), video or meta))
+        with_audio = self._fill_audio(sort(found), tick, on_count) if probe_audio else sort(found)
+        ordered = sort(self._ensure_bitrate(with_audio, video or meta))
         # vlastní úložiště vždy nahoru — mezi desítkami streamů zdrojů se jinak ztrácí
         ordered = [s for s in ordered if s.get("source") == "dav"] + [s for s in ordered if s.get("source") != "dav"]
         if on_progress and done[0] < total:

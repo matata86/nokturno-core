@@ -523,6 +523,55 @@ class TestVypadekZdroje(unittest.TestCase):
             cache = list(pathlib.Path(tmp, "cache").glob("*.json"))
             self.assertTrue(cache, "úspěšný výsledek bez výpadku se cachuje")
 
+    def test_on_source_done_hlasi_odkud_a_kolik(self):
+        """Ukazatel průběhu v Kodi má vědět nejen kolik procent, ale i odkud kolik
+        streamů přišlo — `on_source_done(label, count)` se volá zvlášť za každý zdroj,
+        i za ten, co zrovna vypadl (viz `_engine`: Luna hodí chybu, nahlásí se 0)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            hlaseno = []
+            engine.raw_streams("movie", "tt1", on_source_done=lambda label, n: hlaseno.append((label, n)))
+            self.assertIn(("Luna", 0), hlaseno, "primární zdroj i po chybě nahlásí 0, ne že by chyběl")
+            self.assertIn(("WebShare", 1), hlaseno)
+            self.assertIn(("HellSpy", 0), hlaseno)
+
+    def test_probe_audio_false_vynecha_hlavicky_a_cache(self):
+        """Kodi hromadná klasifikace dabing/titulky (2026-09-15) volá `raw_streams` s
+        `probe_audio=False` — desítky titulů, čtení hlaviček by bylo neúnosně pomalé.
+        Nesmí ani spadnout do 72h cache streamů, jinak by na 72 h zablokoval opravdové
+        ověření hlaviček ve skutečném dialogu streamů pro tentýž titul."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            volani = []
+            puvodni = engine._fill_audio
+            engine._fill_audio = lambda *a, **k: (volani.append(1), puvodni(*a, **k))[1]
+            found = engine.raw_streams("movie", "tt1", probe_audio=False)
+            self.assertEqual(len(found), 1, "stream z WebShare musí zůstat i bez čtení hlaviček")
+            self.assertEqual(volani, [], "_fill_audio se nesmí zavolat")
+            cache = list(pathlib.Path(tmp, "cache").glob("*.json"))
+            self.assertEqual(cache, [], "lehčí výsledek se nesmí zapsat do 72h cache streamů")
+
+    def test_probe_audio_false_vynecha_i_vlastni_uloziste(self):
+        """Nedostupné vlastní úložiště (NAS/DAV) se bez `probe_audio=False` zkoušelo
+        u každého kandidáta znovu (mimo 72h cache streamů, viz `_storage_streams`) —
+        na Office 2026-09-15 to s nedostupným NAS dusilo klasifikaci dabing/titulky
+        na desítky sekund na kandidáta."""
+        from nokturno_core.lib.storage_api import StorageError
+
+        class MrtveUloziste:
+            name = "NAS"
+
+            def files(self):
+                raise StorageError("Network is unreachable")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            engine._storages = [MrtveUloziste()]
+            failures = []
+            found = engine.raw_streams("movie", "tt1", probe_audio=False, failures=failures)
+            self.assertEqual(len(found), 1, "stream z WebShare musí zůstat")
+            self.assertNotIn("NAS", [label for label, _e in failures], "vlastní úložiště se nesmí ani zkusit")
+
 
 class TestPopisVypadku(unittest.TestCase):
     def test_bez_adresy_a_tokenu(self):
@@ -1484,6 +1533,55 @@ class TestVykonJadra2(unittest.TestCase):
             self.assertEqual([m.get("description") for m in a + b], ["popis"] * 4)
         finally:
             modul._lookup = puvodni
+
+    def test_enrich_okamzity_vysledek_nezpusobi_deadlock(self):
+        """`_submit()` registruje `add_done_callback` až PO zápisu do `_INFLIGHT` — když
+        `_lookup` doběhne dřív, než se `add_done_callback` stihne zavolat (bez Luny/sítě
+        vrací `_fetch_title` prázdno okamžitě), spustí se callback rovnou v témž vlákně,
+        ještě uvnitř `with _INFLIGHT_LOCK:`. S prostým `Lock` (ne `RLock`) to byl jistý
+        deadlock — 2026-09-15, odhaleno při stavbě klasifikace CZ dabing/titulky pro Kodi."""
+        import threading
+        from nokturno_core.lib import enrich as modul
+        metas = [{"name": f"Film {i}"} for i in range(5)]   # bez luna/imdb_id → _fetch_title vrátí {} hned
+        hotovo = threading.Event()
+        t = threading.Thread(target=lambda: (modul.enrich(metas, luna=None, deadline=3), hotovo.set()))
+        t.start()
+        self.assertTrue(hotovo.wait(4), "enrich() se zaseknul (deadlock v _INFLIGHT_LOCK)")
+        t.join(1)
+
+    def test_enrich_doplni_hodnoceni_i_kdyz_uz_ma_popis(self):
+        """Sosáčův export nosí krátký popis skoro vždy, ale hodnocení jen občas —
+        `_needs()` dřív titul s popisem, ale bez hodnocení, považoval za hotový a
+        `imdbRating` mu už nikdy nedotáhl (2026-09-15, nahlásil uživatel: „některé
+        filmy nemají hodnocení“)."""
+        from nokturno_core.lib import enrich as modul
+        meta = {"imdb_id": "tt1", "name": "Film", "description": "krátký popis ze Sosáče"}
+        puvodni = modul._lookup
+        modul._lookup = lambda luna, store, ctype, m: {"imdbRating": 7.5}
+        try:
+            self.assertEqual(modul.enrich([meta], deadline=3), 1)
+            self.assertEqual(meta["imdbRating"], 7.5)
+        finally:
+            modul._lookup = puvodni
+
+    def test_fetch_doplni_hodnoceni_z_cinemety_i_kdyz_luna_ma_popis(self):
+        """`_fetch()` dřív sáhl na Cinemetu, jen když Luna nedala vůbec popis —
+        Luna ale umí vrátit popis BEZ hodnocení (2026-09-15, ověřeno u titulů ze
+        Sosáčova „nově přidané“: Cinemeta hodnocení měla, Luna popis bez něj), takže
+        se hodnocení nikdy nedotáhlo. Český popis z Luny se přitom nesmí ztratit."""
+        from nokturno_core.lib import enrich as modul
+
+        class FakeLuna:
+            def meta(self, ctype, imdb):
+                return {"description": "český popis z Luny"}   # bez imdbRating
+        puvodni = modul._cinemeta
+        modul._cinemeta = lambda ctype, imdb: {"description": "english plot", "imdbRating": 7.5}
+        try:
+            data = modul._fetch(FakeLuna(), None, "movie", "tt1474311")
+            self.assertEqual(data["description"], "český popis z Luny")
+            self.assertEqual(data["imdbRating"], 7.5)
+        finally:
+            modul._cinemeta = puvodni
 
     def test_znacka_uloziste_jednou_za_minutu(self):
         from nokturno_core.lib.storage_api import StorageApi
