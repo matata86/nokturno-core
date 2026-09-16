@@ -176,12 +176,24 @@ class TestRazeni(unittest.TestCase):
     def s(self, label, detail, url):
         return {"label": label, "detail": detail, "url": url}
 
-    def test_kvalita_pak_jazyk_pak_bitrate(self):
+    def test_jazyk_pak_kvalita(self):
         rows = [self.s("720p", "1.0 GB | Zvuk: CZ 2.0", "hd-cz"), self.s("1080p", "4.0 GB | Zvuk: EN 5.1", "fhd-en"),
                 self.s("1080p", "4.0 GB | Zvuk: CZ 5.1", "fhd-cz"), self.s("2160p", "12 GB", "uhd-odhad")]
         out = streams.arrange(rows, pref_lang="CZ", order="quality")
-        self.assertEqual([r["url"] for r in out], ["uhd-odhad", "fhd-cz", "fhd-en", "hd-cz"],
-                         "kvalita je hlavní klíč, jazyk rozhoduje remízy")
+        self.assertEqual([r["url"] for r in out], ["fhd-cz", "hd-cz", "uhd-odhad", "fhd-en"],
+                         "preferovaný jazyk je hlavní klíč, uvnitř skupin rozhoduje kvalita")
+        out = streams.arrange(rows, order="quality")
+        self.assertEqual([r["url"] for r in out][:1], ["uhd-odhad"], "bez preferovaného jazyka dál kvalita")
+
+    def test_jazyk_z_nazvu_mezi_overenym_a_ostatnimi(self):
+        overeny = self.s("720p", "1.0 GB | Zvuk: CZ 2.0", "overeny")
+        z_nazvu = self.s("Matrix.1999.2160p.CZ.dabing.mkv", "12 GB", "z-nazvu")
+        cizi = self.s("Matrix.1999.2160p.mkv", "14 GB", "cizi")
+        vyvraceny = self.s("Matrix.1999.2160p.CZ.mkv", "13 GB | Zvuk: EN 5.1", "vyvraceny")
+        vyvraceny["_tracks"] = [{"lang": "EN", "channels": 6}]
+        out = streams.arrange([cizi, vyvraceny, z_nazvu, overeny], pref_lang="CZ", order="size_desc")
+        self.assertEqual([r["url"] for r in out], ["overeny", "z-nazvu", "cizi", "vyvraceny"],
+                         "název souboru nepřebije hlavičku, která jazyk vyvrátila")
 
     def test_filtry_a_pad_na_puvodni_seznam(self):
         rows = [self.s("SD", "0.7 GB", "sd"), self.s("1080p", "9.0 GB", "velky"), self.s("1080p", "3.0 GB", "maly")]
