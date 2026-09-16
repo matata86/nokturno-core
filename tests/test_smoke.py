@@ -286,6 +286,16 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             engine._fill_audio(rows, on_count=counts.append)
             self.assertEqual(counts[-1], 1, "nesmysl v nastavení = výchozí limit")
 
+            # on_audio_progress: kolik hlaviček je hotovo z kolika se doopravdy čte
+            engine = Engine({}, tmp)
+            engine._media_from_file = lambda url: {}
+            audio_progress = []
+            two_rows = [{"url": "ws:1", "label": "a", "detail": "1 GB"},
+                        {"url": "ws:2", "label": "b", "detail": "1 GB"}]
+            engine._fill_audio(two_rows, on_audio_progress=lambda done, total: audio_progress.append((done, total)))
+            self.assertEqual(audio_progress[0], (0, 2), "nejdřív se pošle skutečný total, ne odhad")
+            self.assertEqual(sorted(audio_progress[1:]), [(1, 2), (2, 2)])
+
             # fresh: cache streamů se jen zapíše, nečte
             calls = []
             engine = Engine({"fresh": True}, tmp)

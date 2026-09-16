@@ -242,6 +242,26 @@ class TestVEnginu(unittest.TestCase):
         self.assertEqual(eng._storage_streams({"name": "Matrix"}, None, "movie", failures=failures), [])
         self.assertEqual(failures[0][0], "NAS")
 
+    def test_raw_streams_prochazi_uloziste_soubezne_s_ostatnimi_zdroji(self):
+        """Procházení úložiště (PROPFIND) dřív běželo až PO ostatních zdrojích, ne
+        zároveň s nimi — hledání pak trvalo o celou tuhle fázi déle navíc."""
+        from nokturno_core.engine import NokturnoError
+        with Server() as srv:
+            eng = self.engine(srv.url)
+            eng.original_titles = lambda meta, ctype, alt=None: []
+            eng.meta = lambda ctype, item_id, series_id=None: ({"name": "Matrix", "year": 1999}, None)
+            eng.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError("není nastaven"))
+            eng._cross_streams = lambda *a, **k: []
+            eng._webshare_streams = lambda *a, **k: []
+            eng._webshare_subtitles = lambda *a, **k: []
+            eng._hellspy_streams = lambda *a, **k: []
+            eng._sledujteto_streams = lambda *a, **k: []
+            eng._fastshare_streams = lambda *a, **k: []
+            hlaseno = []
+            found = eng.raw_streams("movie", "tt1", on_source_done=lambda label, n: hlaseno.append((label, n)))
+        self.assertEqual([s["url"] for s in found], ["dav:2:Filmy/Matrix (1999)/matrix.2160p.remux.mkv"])
+        self.assertIn(("Vlastní úložiště", 1), hlaseno)
+
 
 if __name__ == "__main__":
     unittest.main()
