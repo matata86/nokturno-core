@@ -62,7 +62,7 @@ class TestCoVyzadujeKodi(unittest.TestCase):
         "tmdb_api": ("TmdbApi", "TmdbError"),
         "sosac_api": ("SosacError", "is_sosac_id", "names_match"),
         "sosac_direct": ("EXPORT", "SosacDirect", "is_direct_id"),
-        "enrich": ("enrich", "enrich_one"),
+        "enrich": ("enrich", "enrich_one", "shutdown_pool"),
         "hellspy_api": ("HellspyApi", "HellspyError"),
         "sledujteto_api": ("SledujtetoApi", "SledujtetoError"),
         "fastshare_api": ("FastshareApi", "FastshareError"),

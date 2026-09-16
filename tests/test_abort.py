@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -187,3 +188,47 @@ class TestKlienti(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEnrichPool(unittest.TestCase):
+    """Sdílený executor `enrich` nesmí nechat viset nečinná vlákna: Kodi na ně po doběhnutí
+    pluginu čeká a zablokovaná v C je nezabije (Office 2026-09-16, widget „Nově přidané")."""
+
+    def tearDown(self):
+        from nokturno_core.lib import enrich
+        enrich.shutdown_pool()
+
+    def workers(self):
+        return [t for t in threading.enumerate() if t.name.startswith("nokturno-enrich") and t.is_alive()]
+
+    def test_po_shutdown_vlakna_skonci_a_pool_jde_znovu(self):
+        from nokturno_core.lib import enrich
+        enrich.shutdown_pool()
+        with unittest.mock.patch.object(enrich, "_lookup", return_value={"description": "popis"}):
+            metas = [{"name": f"Film {i}", "year": "2020", "imdb_id": f"tt{i}"} for i in range(3)]
+            self.assertEqual(enrich.enrich(metas, deadline=5), 3)
+        self.assertTrue(self.workers(), "executor vznikl až při dotazu")
+        enrich.shutdown_pool()
+        deadline = time.time() + 3
+        while self.workers() and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(self.workers(), [], "nečinná vlákna po shutdown skončila")
+        with unittest.mock.patch.object(enrich, "_lookup", return_value={"description": "popis"}):
+            self.assertEqual(enrich.enrich([{"name": "Další", "year": "2021", "imdb_id": "tt9"}], deadline=5), 1)
+
+    def test_cancel_zrusi_nezacate(self):
+        from nokturno_core.lib import enrich
+        enrich.shutdown_pool()
+        release = threading.Event()
+
+        def lookup(*a, **k):
+            release.wait(2)
+            return {}
+        with unittest.mock.patch.object(enrich, "_lookup", lookup):
+            metas = [{"name": f"Film {i}", "year": "2020", "imdb_id": f"tx{i}"} for i in range(20)]
+            enrich.enrich(metas, deadline=0.1)
+            with enrich._INFLIGHT_LOCK:
+                futures = list(enrich._INFLIGHT.values())
+            enrich.shutdown_pool(cancel=True)
+            release.set()
+        self.assertGreaterEqual(sum(1 for f in futures if f.cancelled()), 20 - enrich.WORKERS)
