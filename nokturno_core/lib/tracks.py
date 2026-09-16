@@ -32,6 +32,7 @@ SUBS_WHEN_NEEDED = 1  # zapnout, když chybí zvuk v preferovaném jazyce; jinak
 SUBS_ALWAYS = 2       # vždy titulky v preferovaném jazyce
 
 COMMENTARY_RE = re.compile(r"koment|comment|director|režis", re.IGNORECASE)
+FORCED_RE = re.compile(r"forced|vynucen|vynúten|foreign|cizojazy", re.IGNORECASE)
 WORD_SPLIT_RE = re.compile(r"[^0-9a-z]+")
 
 
@@ -57,6 +58,13 @@ def track_lang(track):
         if words & codes or (lang == "CZ" and words & {"dabing", "dab"}):
             return lang
     return ""
+
+
+def is_forced(track):
+    """Vynucené titulky (jen cizojazyčné pasáže). Příznak kontejneru chybí často —
+    Office 2026-09-16: MKV se stopou „CZE forced“ a `isforced: false`, takže se
+    brala jako plné titulky a u dabingu se vypnula."""
+    return bool(track.get("isforced")) or bool(FORCED_RE.search(str(track.get("name") or "")))
 
 
 def _channels(track):
@@ -110,11 +118,11 @@ def pick_subtitle(subtitles, pref_lang, audio_ok, mode=SUBS_WHEN_NEEDED):
     subs = list(subtitles or [])
 
     def full(lang):
-        found = [s for s in subs if track_lang(s) == lang and not s.get("isforced")]
+        found = [s for s in subs if track_lang(s) == lang and not is_forced(s)]
         found.sort(key=lambda s: (bool(s.get("isimpaired")), not s.get("isdefault"), s.get("index") or 0))
         return found
 
-    forced = [s for s in subs if s.get("isforced") and track_lang(s) == pref_lang]
+    forced = [s for s in subs if is_forced(s) and track_lang(s) == pref_lang]
     if mode == SUBS_ALWAYS:
         for lang in SUBTITLE_FALLBACK.get(pref_lang, (pref_lang,)):
             found = full(lang)

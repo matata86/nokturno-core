@@ -69,6 +69,13 @@ class TestTitulky(unittest.TestCase):
         self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", True), ("on", 4))
         self.assertEqual(tracks.pick_subtitle(self.SUBS[:4], "CZ", True), ("off", None))
 
+    def test_vynucene_jen_podle_nazvu(self):
+        """Office 2026-09-16: „CZE forced“ bez příznaku `isforced`."""
+        subs = [{"index": 0, "language": "cze", "name": "CZE"},
+                {"index": 1, "language": "cze", "name": "CZE forced", "isforced": False, "isdefault": True}]
+        self.assertEqual(tracks.pick_subtitle(subs, "CZ", True), ("on", 1))
+        self.assertEqual(tracks.pick_subtitle(subs, "CZ", False), ("on", 0))
+
     def test_nevime_co_hraje(self):
         self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", None), ("keep", None))
 
