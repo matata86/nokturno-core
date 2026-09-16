@@ -451,6 +451,30 @@ class TestStoreSdilenyViceProcesy(unittest.TestCase):
 
 
 
+class TestResumeStream(unittest.TestCase):
+    """Pokračování ve sledování si k pozici pamatuje i vnitřní referenci streamu
+    (`ws:…`/`hs:…:…`/…), aby přehrání nemuselo znovu prohledávat všechny zdroje."""
+
+    def setUp(self):
+        from nokturno_core.lib.store import Store
+        self.store = Store(tempfile.mkdtemp())
+
+    def test_bez_streamu_vraci_none(self):
+        self.store.set_resume("film1", 100, 1000)
+        self.assertIsNone(self.store.resume_stream("film1"))
+
+    def test_ulozi_a_vrati_stream(self):
+        self.store.set_resume("film1", 100, 1000, stream_url="ws:abc", stream_subs="cz.srt")
+        self.assertEqual(self.store.resume_stream("film1"), ("ws:abc", "cz.srt"))
+
+    def test_dalsi_zapis_pozice_bez_streamu_predchozi_referenci_zachova(self):
+        """Cross-device sync ani ruční nastavení pozice stream neznají — nesmí smazat,
+        co si tam dřív uložilo přehrávání (`Player.save_resume`)."""
+        self.store.set_resume("film1", 100, 1000, stream_url="ws:abc", stream_subs="")
+        self.store.set_resume("film1", 200, 1000)
+        self.assertEqual(self.store.resume_stream("film1"), ("ws:abc", ""))
+
+
 class TestVypadekZdroje(unittest.TestCase):
     """Výpadek jednoho zdroje (vypnutý addon Luny) nesmí shodit hledání v ostatních."""
 
