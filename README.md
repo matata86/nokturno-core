@@ -53,6 +53,7 @@ nokturno_core/
 │   ├── webshare_api.py sosac_direct.py hellspy_api.py   zdroje streamů
 │   ├── prowlarr.py qbittorrent.py                  torrenty
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
+│   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
 │   └── store.py sync.py stats.py trakt_api.py enrich.py sosac_api.py
 └── ...
 ```
