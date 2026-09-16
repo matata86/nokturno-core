@@ -65,16 +65,16 @@ class TestTitulky(unittest.TestCase):
         self.assertEqual(tracks.pick_subtitle(self.SUBS[:2], "CZ", False), ("on", 1))
         self.assertEqual(tracks.pick_subtitle(self.SUBS[:1], "CZ", False), ("keep", None))
 
-    def test_dabing_jen_vynucene_jinak_vypnout(self):
-        self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", True), ("on", 4))
+    def test_dabing_vypne_titulky_i_vynucene(self):
+        self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", True), ("off", None))
         self.assertEqual(tracks.pick_subtitle(self.SUBS[:4], "CZ", True), ("off", None))
 
     def test_vynucene_jen_podle_nazvu(self):
         """Office 2026-09-16: „CZE forced“ bez příznaku `isforced`."""
         subs = [{"index": 0, "language": "cze", "name": "CZE"},
                 {"index": 1, "language": "cze", "name": "CZE forced", "isforced": False, "isdefault": True}]
-        self.assertEqual(tracks.pick_subtitle(subs, "CZ", True), ("on", 1))
-        self.assertEqual(tracks.pick_subtitle(subs, "CZ", False), ("on", 0))
+        self.assertEqual(tracks.pick_subtitle(subs, "CZ", False), ("on", 0), "vynucené nejsou plné titulky")
+        self.assertEqual(tracks.pick_subtitle(subs, "CZ", True), ("off", None))
 
     def test_nevime_co_hraje(self):
         self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", None), ("keep", None))
