@@ -73,6 +73,7 @@ class TestCoVyzadujeKodi(unittest.TestCase):
         "trakt_api": ("TraktApi", "TraktError"),
         "webshare_api": ("SORTS", "WebshareApi", "WebshareError", "human_size"),
         "stats": ("COLLECT_URL", "Stats"),
+        "abort": ("Aborted",),
     }
 
     def test_vsechny_symboly_existuji(self):
