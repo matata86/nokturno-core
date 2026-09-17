@@ -60,6 +60,7 @@ class TestCoVyzadujeKodi(unittest.TestCase):
         "luna_api": ("LunaApi", "LunaError", "parse_base_url", "parse_token"),
         "cinemeta_api": ("CinemetaApi", "CinemetaError"),
         "tmdb_api": ("TmdbApi", "TmdbError"),
+        "dash_api": ("DashApi", "DashApiError"),
         "sosac_api": ("SosacError", "is_sosac_id", "names_match"),
         "sosac_direct": ("EXPORT", "SosacDirect", "is_direct_id"),
         "enrich": ("enrich", "enrich_one", "shutdown_pool"),

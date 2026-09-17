@@ -54,6 +54,7 @@ nokturno_core/
 │   ├── prowlarr.py qbittorrent.py                  torrenty
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
+│   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
 │   └── store.py sync.py stats.py trakt_api.py enrich.py sosac_api.py
 └── ...
 ```
