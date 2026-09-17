@@ -92,9 +92,33 @@ SCHEMA = [
     ]},
     {"id": "playback", "label": "Přehrávání", "fields": [
         {"id": "pref_lang", "label": "Jazyk", "type": "choice", "options": [("0", "Jakýkoli"), ("1", "CZ")]},
+        {"id": "layout", "label": "Pořadí", "type": "order",
+         "items": [("langs", "Jazyky"), ("size", "Velikost"), ("video", "Rozlišení"), ("file", "Soubor")]},
     ]},
 ]
-VALUES = {"ws_enabled": "false", "ws_username": "stary", "ws_password": "tajne-heslo-123", "pref_lang": "1"}
+VALUES = {"ws_enabled": "false", "ws_username": "stary", "ws_password": "tajne-heslo-123", "pref_lang": "1",
+          "layout": "langs,size|video"}
+
+
+class TestPoradi(unittest.TestCase):
+    KEYS = {"langs", "size", "video", "file"}
+
+    def test_rozbor(self):
+        self.assertEqual(remote_setup.parse_order("langs, size|video", self.KEYS), [["langs", "size"], ["video"]])
+        self.assertEqual(remote_setup.parse_order("size", self.KEYS), [["size"], []])
+        self.assertEqual(remote_setup.parse_order("", self.KEYS), [[], []])
+        for spatne in ("size,size", "size|video|file", "exec", "size|<script>"):
+            self.assertIsNone(remote_setup.parse_order(spatne, self.KEYS), spatne)
+
+    def test_stranka_ma_radky_a_skryte(self):
+        server = remote_setup.SetupServer(SCHEMA, VALUES, token="x")
+        page = server.render()
+        self.assertIn('<input type="hidden" name="layout" id="layout" value="langs,size|video">', page)
+        zones = page.split('data-order="layout"', 1)[1].split("</ul>")
+        self.assertIn('data-key="langs"', zones[0])
+        self.assertIn('data-key="video"', zones[1])
+        self.assertIn("Nezobrazovat", zones[2])
+        self.assertIn('data-key="file"', zones[2], "co v pořadí chybí, je ve skupině Nezobrazovat")
 
 
 class TestServer(unittest.TestCase):
@@ -137,6 +161,11 @@ class TestServer(unittest.TestCase):
         self.assertEqual(self.server.wait_result(1), {"ws_enabled": "true", "ws_username": "novy"})
         self.assertEqual(self.post({"pref_lang": "0"})[0], 410, "přijme se jen jedno odeslání")
         self.assertEqual(self.get("/s/klic-123")[0], 410)
+
+    def test_poradi_odeslani_a_neplatne(self):
+        self.assertEqual(self.post({"layout": "file,langs|exec"})[0], 400)
+        self.assertEqual(self.post({"layout": "file, langs|size", "pref_lang": "1", "ws_username": "stary"})[0], 200)
+        self.assertEqual(self.server.wait_result(1), {"layout": "file,langs|size"})
 
     def test_neplatna_volba(self):
         status, page = self.post({"pref_lang": "9"})
