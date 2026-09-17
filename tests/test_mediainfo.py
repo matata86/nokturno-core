@@ -172,6 +172,35 @@ class TestParovaniStreamu(unittest.TestCase):
         self.assertEqual(out[0]["_ws_name"], "Matrix.1999.1080p.CZ.mkv")
 
 
+class TestParseStreamBezHlavicky(unittest.TestCase):
+    """`probe_audio=False` (hromadná klasifikace, viz `_build_lang_catalog()` v Kodi) nečte
+    hlavičky souborů — WebShare/HellSpy/Sledujteto/FastShare tak v `detail` nemají „Zvuk:“
+    ani „Tit.“ a jazyk se dá poznat jen z názvu souboru."""
+
+    def test_websharovy_stream_bez_zvuk_pozna_jazyk_z_nazvu(self):
+        s = {"label": "Matrix.1999.2160p.CZ.dabing.mkv", "detail": "12 GB", "source": "ws", "_direct": True}
+        streams.parse_stream(s)
+        self.assertEqual(s["langs"], {"CZ"})
+        self.assertTrue(s.get("_langs_from_name"), "jazyk je jen odhad z názvu, ne ověřený „Zvuk:“")
+
+    def test_krizovy_stream_bez_zvuk_bere_nazev_z_ws_name(self):
+        s = {"label": "Luna popisek", "detail": "4.0 GB", "source": "main", "_ws_name": "Matrix.1999.CZtit.mkv"}
+        streams.parse_stream(s)
+        self.assertEqual(s["subs"], {"CZ"})
+
+    def test_zdroj_bez_jazyka_v_nazvu_zustane_prazdny(self):
+        s = {"label": "Matrix.1999.2160p.mkv", "detail": "14 GB", "source": "ws", "_direct": True}
+        streams.parse_stream(s)
+        self.assertEqual(s["langs"], set())
+        self.assertNotIn("_langs_from_name", s)
+
+    def test_overeny_zvuk_z_hlavicky_ma_prednost_pred_nazvem(self):
+        s = {"label": "Matrix.1999.CZ.mkv", "detail": "13 GB | Zvuk: EN 5.1", "source": "ws", "_direct": True}
+        streams.parse_stream(s)
+        self.assertEqual(s["langs"], {"EN"}, "hlavička řekla EN, název jen hádá CZ — hlavička vyhrává")
+        self.assertNotIn("_langs_from_name", s)
+
+
 class TestRazeni(unittest.TestCase):
     def s(self, label, detail, url):
         return {"label": label, "detail": detail, "url": url}
