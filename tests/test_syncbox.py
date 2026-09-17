@@ -5,6 +5,7 @@ zařízení: zabalení stavu, nahrání, stažení cizího blobu a slití do vla
 úložiště. Jestli server nedokáže do blobu vidět, se ověřuje tím, že se v něm
 nehledá text — hledá se, že ho neotevře ani jiný kód.
 """
+import base64
 import io
 import json
 import os
@@ -73,7 +74,7 @@ class FakeRelay(object):
             self.blobs.pop(device, None)
             return Resp(b"{}")
         since = int(url.partition("since=")[2] or 0)
-        cizi = [{"blob": blob.hex()} for dev, (rev, blob) in self.blobs.items()
+        cizi = [{"blob": base64.b64encode(blob).decode()} for dev, (rev, blob) in self.blobs.items()
                 if dev != device and rev > since]
         return Resp(json.dumps({"rev": self.rev, "devices": cizi}).encode())
 
