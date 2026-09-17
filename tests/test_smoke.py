@@ -1030,6 +1030,24 @@ class TestSosacBezOdkazu(unittest.TestCase):
         m = SosacDirect().movie_meta({"n": {"cs": "Harry"}, "m": "0241527", "l": "35da"})
         self.assertEqual(m["id"], "sosacd_m_35da")
 
+    def test_nove_pridane_serialy_s_imdb_a_nejnovejsim_dilem(self):
+        from nokturno_core.lib.sosac_direct import SosacDirect, EXPORT
+        d = SosacDirect()
+        index = [["mesto krve", "city of blood", {"n": {"cs": "Město krve", "en": "City of Blood"}, "m": "123456",
+                                                  "l": "http://x/serialy/1.json"}],
+                 ["dvojnik", "a", {"n": {"cs": "Dvojník", "en": "A"}, "m": "1", "l": "http://x/serialy/2.json"}],
+                 ["dvojnik", "b", {"n": {"cs": "Dvojník", "en": "B"}, "m": "2", "l": "http://x/serialy/3.json"}],
+                 ["bez imdb", "", {"n": {"cs": "Bez IMDb"}, "l": "http://x/serialy/4.json"}]]
+        eps = [{"t": {"cs": "Město krve", "en": "City of Blood"}, "s": "1", "e": "6"},
+               {"t": {"cs": "Město krve", "en": "City of Blood"}, "s": "1", "e": "4"},
+               {"t": {"cs": "Dvojník", "en": "B"}, "s": "2", "e": "1"},
+               {"t": {"cs": "Bez IMDb"}, "s": "1", "e": "1"},
+               {"t": {"cs": "Neznámý"}, "s": "1", "e": "1"}]
+        d._series_index = lambda: index
+        d._get = lambda url, ttl=None: eps if url == EXPORT + "tvshowsrecentlyadded.json" else []
+        out = d.recent_series()
+        self.assertEqual([(m["imdb_id"], s, e) for m, s, e in out], [("tt0123456", 1, 6), ("tt0000002", 2, 1)])
+
     def test_katalog_prevadi_jen_stranku(self):
         from nokturno_core.lib.sosac_direct import SosacDirect
         d = SosacDirect()
