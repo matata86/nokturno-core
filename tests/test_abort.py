@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import unittest.mock
 from concurrent.futures import ThreadPoolExecutor
 
@@ -143,6 +144,40 @@ class TestEngine(unittest.TestCase):
             engine._fill_audio(streams)
         release.set()
         self.assertLess(len(probed), 24, "nezačaté hlavičky se zrušily")
+
+    def test_hlavicky_cekaji_nejvys_strop_a_pomale_doctou_na_pozadi(self):
+        """Pár pomalých souborů z HellSpy (2–3,7 s) drželo výběr streamu (Office 2026-09-18).
+        Po `PROBE_DEADLINE` se nečeká; pomalý soubor doběhne a zapíše se do cache."""
+        import nokturno_core.engine as engine_mod
+        engine = Engine({"audio_probe": "24"}, self.dir)
+        hotovo = threading.Event()
+
+        def media(url):
+            if url == "hs:pomaly":
+                time.sleep(0.6)
+                hotovo.set()
+            return {"audio": [{"lang": "CZ", "channels": "5.1", "codec": "ac3"}], "height": 1080}
+        engine._media_from_file = media
+        engine.last_timings = {}
+        streams = [{"url": "hs:pomaly", "label": "pomalý", "detail": ""},
+                   {"url": "ws:rychly", "label": "rychlý", "detail": ""}]
+        with mock.patch.object(engine_mod, "PROBE_DEADLINE", 0.2):
+            t0 = time.monotonic()
+            out = engine._fill_audio(streams)
+            self.assertLess(time.monotonic() - t0, 0.5, "na pomalý soubor se nečeká")
+        self.assertTrue(out[1].get("_tracks"), "rychlý soubor má ověřený zvuk")
+        self.assertFalse(out[0].get("_tracks"), "pomalý zatím ne")
+        self.assertEqual(engine.last_timings["hlaviček nedočteno"], 1)
+        self.assertTrue(hotovo.wait(2), "pomalý soubor doběhne na pozadí")
+
+    def test_gather_se_stropem_vrati_i_nehotove(self):
+        pool = ThreadPoolExecutor(max_workers=2)
+        futures = [pool.submit(time.sleep, 0.01), pool.submit(time.sleep, 0.5)]
+        t0 = time.monotonic()
+        out = abort.gather(pool, futures, lambda: False, deadline=0.2, poll=0.05)
+        self.assertLess(time.monotonic() - t0, 0.4)
+        self.assertEqual([f.done() for f in out], [True, False])
+        self.assertIsNone(futures[1].result(timeout=2), "nic se nezrušilo, úloha doběhla")
 
     def test_klienti_dostanou_should_stop(self):
         """Sosáč (index seriálů po písmenech) a úložiště (průchod stromu) mají vlastní

@@ -585,6 +585,79 @@ class TestVypadekZdroje(unittest.TestCase):
             self.assertNotIn("NAS", [label for label, _e in failures], "vlastní úložiště se nesmí ani zkusit")
 
 
+
+class TestSoubezneHledani(unittest.TestCase):
+    """Hlavní zdroj (Luna/Sosáč) se dřív čekal předem — studená Luna ~6 s, než se vůbec
+    začalo hledat jinde (Office 2026-09-18). Teď běží souběžně s ostatními i s titulky."""
+
+    def _engine(self, tmp, luna_streams, local_title=None):
+        from nokturno_core.lib.luna_api import LunaApi
+        engine = Engine({}, tmp)
+        self.starty, self.dotazy = {}, []
+
+        class PomalaLuna(LunaApi):
+            def __init__(self):
+                pass
+
+            def streams(inner, *a, **k):
+                self.starty["Luna"] = time.monotonic()
+                time.sleep(0.4)
+                return list(luna_streams)
+
+        def ws(meta, *a, **k):
+            self.starty.setdefault("WebShare", time.monotonic())
+            self.dotazy.append(meta.get("name"))
+            return [{"url": "ws:" + meta.get("name"), "label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB",
+                     "source": "ws", "_direct": True}]
+        engine.api_for = lambda item_id: PomalaLuna()
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Sunday League", "year": 2020}, None)
+        engine._cross_streams = lambda *a, **k: []
+        engine._hellspy_streams = lambda *a, **k: []
+        engine._webshare_streams = ws
+        engine._webshare_subtitles = lambda *a, **k: [{"url": "ws:sub", "lang": "cs"}]
+        engine._fill_audio = lambda streams, *a, **k: streams
+        engine._storage_streams = lambda *a, **k: []
+        engine._with_local_title = lambda ctype, base_id, meta: (
+            {**meta, "name": local_title, "_orig": meta["name"]} if local_title else meta)
+        return engine
+
+    def test_hlavni_zdroj_neblokuje_ostatni(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, [{"url": "http://luna/x", "title": "Film 1080p", "name": "Luna"}])
+            found = engine.raw_streams("movie", "tt1")
+            self.assertLess(self.starty["WebShare"] - self.starty["Luna"], 0.3, "WebShare nesmí čekat na Lunu")
+            self.assertEqual(self.dotazy, ["Sunday League"], "Luna něco našla — český název se nehledá")
+            self.assertTrue(all(st.get("subtitles") for st in found if st.get("source") == "ws"),
+                            "titulky z téže souběžné dávky se přiřadí")
+            self.assertIn("Luna", engine.last_timings["zdroje"])
+
+    def test_prazdny_hlavni_zdroj_hleda_znovu_cesky(self):
+        """Stejný výsledek jako dřív: bez streamů z Luny hledají ostatní zdroje s českým názvem."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, [], local_title="Okresní přebor")
+            found = engine.raw_streams("movie", "tt1")
+            self.assertEqual(self.dotazy, ["Sunday League", "Okresní přebor"])
+            self.assertEqual([st["url"] for st in found], ["ws:Okresní přebor"], "platí výsledek s českým názvem")
+            self.assertTrue(engine.last_timings.get("znovu česky"))
+
+    def test_prazdny_hlavni_zdroj_bez_jineho_nazvu_nehleda_dvakrat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, [])
+            engine.raw_streams("movie", "tt1")
+            self.assertEqual(self.dotazy, ["Sunday League"])
+
+    def test_chyba_titulku_neni_vypadek_zdroje(self):
+        """Výsledek s výpadkem se necachuje — kvůli titulkům by se streamy hledaly pořád znovu."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, [{"url": "http://luna/x", "title": "Film 1080p", "name": "Luna"}])
+            engine._webshare_subtitles = lambda *a, **k: 1 / 0
+            failures, hlaseno = [], []
+            found = engine.raw_streams("movie", "tt1", failures=failures,
+                                       on_source_done=lambda label, n: hlaseno.append(label))
+            self.assertEqual(failures, [])
+            self.assertTrue(found)
+            self.assertNotIn("Titulky", hlaseno, "titulky nejsou zdroj streamů")
+
 class TestPopisVypadku(unittest.TestCase):
     def test_bez_adresy_a_tokenu(self):
         from nokturno_core.lib.source_errors import describe_failure
