@@ -122,6 +122,12 @@ class TestRazeniStreamu(unittest.TestCase):
         self.assertEqual(streams.subs_from_name("film_cz_tit_1080p"), {"CZ"})
         self.assertEqual(streams.subs_from_name("film.CZtit.1080p"), {"CZ"})
 
+    def test_madarstina_z_nazvu_souboru(self):
+        self.assertEqual(streams.langs_from_name("film_hu_1080p"), {"HU"})
+        self.assertEqual(streams.langs_from_name("film_magyar_1080p"), {"HU"})
+        self.assertEqual(streams.subs_from_name("film_hu_tit_1080p"), {"HU"})
+        self.assertEqual(streams.subs_from_name("film.HUtit.1080p"), {"HU"})
+
 
 class TestKonstanty(unittest.TestCase):
     def test_klice_odpovidaji_tomu_co_engine_cte(self):
@@ -1955,3 +1961,10 @@ class TestWebshareTitulky(unittest.TestCase):
         self.assertEqual(_subtitle_rank("film.web-dl.srt", poradi), 2, "bez značky za preferované")
         self.assertEqual(_subtitle_rank("film.eng.srt", poradi), 3, "cizí jazyk nakonec")
         self.assertEqual(_subtitle_rank("film.cz.srt", ()), 0, "bez předvolby se pořadí z WebShare nemění")
+
+    def test_rank_madarstiny(self):
+        from nokturno_core.engine import _subtitle_rank
+        poradi = ("HU",)
+        self.assertEqual(_subtitle_rank("film.hu.srt", poradi), 0)
+        self.assertEqual(_subtitle_rank("film.magyar.srt", poradi), 0)
+        self.assertEqual(_subtitle_rank("film.cz.srt", poradi), 2, "cizí jazyk nakonec")

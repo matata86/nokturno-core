@@ -18,6 +18,8 @@ class TestJazykStopy(unittest.TestCase):
         self.assertEqual(tracks.track_lang({"language": "ces"}), "CZ")
         self.assertEqual(tracks.track_lang({"language": "slk"}), "SK")
         self.assertEqual(tracks.track_lang({"language": "eng"}), "EN")
+        self.assertEqual(tracks.track_lang({"language": "hun"}), "HU")
+        self.assertEqual(tracks.track_lang({"language": "und", "name": "Magyar 5.1"}), "HU")
         self.assertEqual(tracks.track_lang({"language": "und", "name": "CZ Dabing 5.1"}), "CZ")
         self.assertEqual(tracks.track_lang({"language": "", "name": "Čeština"}), "CZ")
         self.assertEqual(tracks.track_lang({"language": "", "name": "Matrix CZtit"}), "CZ")
@@ -83,6 +85,12 @@ class TestTitulky(unittest.TestCase):
         self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", True, tracks.SUBS_ALWAYS), ("on", 3))
         self.assertEqual(tracks.pick_subtitle(self.SUBS, "CZ", False, tracks.SUBS_KEEP), ("keep", None))
 
+    def test_madarstina_nema_blizky_jazyk(self):
+        """Na rozdíl od CZ/SK nemá HU náhradní jazyk — bez HU titulků zůstane vypnuto."""
+        subs = [{"index": 0, "language": "cze"}, {"index": 1, "language": "hun"}]
+        self.assertEqual(tracks.pick_subtitle(subs, "HU", False), ("on", 1))
+        self.assertEqual(tracks.pick_subtitle(subs[:1], "HU", False), ("keep", None))
+
 
 CZ_TEXT = """1
 00:00:01,000 --> 00:00:03,000
@@ -128,6 +136,10 @@ class TestStazeneTitulky(unittest.TestCase):
                          "z pár slov se nehádá")
         polstina = "Nie wiem, czy mogę ci zaufać. Dlaczego tu jesteś i co robisz? Przyjdź jutro. " * 10
         self.assertEqual(tracks.subtitle_lang(polstina), "")
+        madarstina = ("Szia! Az idő gyorsan telik, és nem tudom, hogy mikor jössz el hozzám. "
+                      "A tűz még ég, és a fű zöld. Előtte megnéztem, hogy győz-e a csapatunk. "
+                      "Sőt, még többet is szeretnék mondani neked, de most nincs időm.\n") * 3
+        self.assertEqual(tracks.subtitle_lang(madarstina), "HU")
 
     def test_kodovani(self):
         self.assertEqual(tracks.decode_subtitle(CZ_TEXT.encode("cp1250")), CZ_TEXT)
