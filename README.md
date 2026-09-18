@@ -106,6 +106,20 @@ z větve pro Home Assistant.
 - Pryč diagnostické lešení Sledujteto (`last_keys`, `last_sample`, INFO logování), `HISTORY_MAX`,
   `_logged` v qBittorrentu, prázdná větev v `sosac_direct.streams`; `urllib.error` importovaný explicitně.
 
+## Diagnostika Luny (`lib/luna_api.py`, 2026-09-18)
+
+Luna se instaluje mimo doplněk a „nefunguje mi to" o ní chodí častěji než o všech
+ostatních zdrojích dohromady. `diagnose(base, token)` projde celý řetěz a vrátí
+kód příčiny (`unreachable`, `not_luna`, `no_token`, `bad_token`, `no_streams`, …),
+který si každá větev přeloží do vlastní hlášky; `discover()` najde Lunu v podsíti
+(TCP klepnutí na 7126 + manifest, celá `/24` za ~1,6 s); `normalize_base_url()`
+spolkne holou IP i celou adresu ze `/setup` včetně tokenu.
+
+Proč je to potřeba: **manifest Luna vydá i pro neplatný token** (jen s výchozím
+nastavením), takže kontrola „přišel manifest = zdroj funguje" byla falešně zelená.
+Ověřit token jde jedině dotazem na streamy, a to na víc titulech — hlavní zdroj
+Luny nemá všechno.
+
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
 Dnešní `sync.py` umí vyměňovat stav mezi více Kodi, ale potřebuje k tomu HA jako
