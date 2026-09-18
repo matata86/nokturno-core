@@ -221,8 +221,15 @@ class TestRazeni(unittest.TestCase):
         vyvraceny = self.s("Matrix.1999.2160p.CZ.mkv", "13 GB | Zvuk: EN 5.1", "vyvraceny")
         vyvraceny["_tracks"] = [{"lang": "EN", "channels": 6}]
         out = streams.arrange([cizi, vyvraceny, z_nazvu, overeny], pref_lang="CZ", order="size_desc")
-        self.assertEqual([r["url"] for r in out], ["overeny", "z-nazvu", "cizi", "vyvraceny"],
+        self.assertEqual([r["url"] for r in out], ["z-nazvu", "overeny", "cizi", "vyvraceny"],
+                         "čeština z názvu je ve skupině s ověřenou (Matrix: 4K nesmí pod SD); "
                          "název souboru nepřebije hlavičku, která jazyk vyvrátila")
+
+    def test_odhad_z_nazvu_prehraje_jen_remizu(self):
+        overeny = self.s("2160p", "12 GB | Zvuk: CZ 5.1", "overeny")
+        z_nazvu = self.s("Matrix.1999.2160p.CZ.mkv", "12 GB", "z-nazvu")
+        out = streams.arrange([z_nazvu, overeny], pref_lang="CZ", order="quality")
+        self.assertEqual([r["url"] for r in out], ["overeny", "z-nazvu"], "při stejné kvalitě ověřený napřed")
 
     def test_filtry_a_pad_na_puvodni_seznam(self):
         rows = [self.s("SD", "0.7 GB", "sd"), self.s("1080p", "9.0 GB", "velky"), self.s("1080p", "3.0 GB", "maly")]

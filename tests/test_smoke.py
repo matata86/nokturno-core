@@ -658,6 +658,87 @@ class TestSoubezneHledani(unittest.TestCase):
             self.assertTrue(found)
             self.assertNotIn("Titulky", hlaseno, "titulky nejsou zdroj streamů")
 
+
+class TestSlucovaniVerzi(unittest.TestCase):
+    """Stejný film dvakrát na HellSpy, 18,6 a 18,6 GB, stejný zvuk i titulky — v dialogu dva
+    totožné řádky (Office 2026-09-18, Pelíšky). Uživatel mezi takovými verzemi nevybírá,
+    velikost ±10 % je mu jedno."""
+
+    @staticmethod
+    def st(url, label, gb, source="hs"):
+        from nokturno_core.lib.streams import parse_stream
+        return parse_stream({"url": url, "label": label, "detail": f"{gb} GB", "source": source, "_direct": True})
+
+    def test_overeny_jazyk_z_hlavicky_neni_odhad(self):
+        """Čertí brko: 1080p z FastShare („(CZ)“ v názvu, čeština potvrzená hlavičkou) bylo za
+        720p i 480p ze Sosáče — příznak odhadu z názvu přežil přepočet po čtení hlavičky."""
+        from nokturno_core.lib.streams import arrange, parse_stream
+        fs = parse_stream({"url": "fs:1", "label": "Čertí brko (2018)(CZ).mp4", "detail": "4.1 GB",
+                           "source": "fs", "_direct": True})
+        self.assertTrue(fs.get("_langs_from_name"))
+        fs["detail"] += " | Zvuk: CZ"          # tak to po hlavičce zapíše `_fill_audio`
+        fs.pop("quality_rank")
+        parse_stream(fs)
+        fs["quality_rank"] = 3
+        self.assertFalse(fs.get("_langs_from_name"))
+        sosac = parse_stream({"url": "streamuj:1", "label": "Sosáč CZ - HD", "detail": "1.4 GB", "source": "sosac"})
+        self.assertEqual([s["url"] for s in arrange([sosac, fs], pref_lang="CZ", order="quality")],
+                         ["fs:1", "streamuj:1"])
+
+    def test_slouci_stejne_verze_i_napric_zdroji(self):
+        from nokturno_core.lib.streams import group_streams
+        out = group_streams([self.st("hs:1", "Pelisky.1080p.CZ.mkv", 18.6), self.st("hs:2", "Pelisky.1080p.CZ.mkv", 18.6),
+                             self.st("ws:3", "Pelisky 1080p CZ.mkv", 17.3, "ws")])
+        self.assertEqual([s["url"] for s in out], ["hs:1"])
+        self.assertEqual([s["url"] for s in out[0]["_alts"]], ["hs:2", "ws:3"])
+
+    def test_nesloucuje_co_uzivatel_rozlisuje(self):
+        from nokturno_core.lib.streams import group_streams
+        out = group_streams([
+            self.st("a", "Film.1080p.CZ.mkv", 18), self.st("b", "Film.2160p.CZ.mkv", 18),       # kvalita
+            self.st("c", "Film.1080p.EN.mkv", 18), self.st("d", "Film.1080p.HDR.CZ.mkv", 18),   # jazyk, HDR
+            self.st("e", "Film.1080p.CZ.mkv", 12), self.st("f", "Film.1080p.CZ.mkv", 18, "dav"),  # velikost, úložiště
+        ])
+        self.assertEqual(len(out), 6)
+        self.assertFalse(any(s.get("_alts") for s in out))
+
+    def test_hlavicky_jen_u_zastupcu_a_rozbaleni(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"merge_streams": True}, tmp)
+            engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError_("není nastaven zdroj"))
+            engine.meta = lambda *a, **k: ({"id": "tt1", "name": "Pelíšky", "year": 1999}, None)
+            engine._cross_streams = lambda *a, **k: []
+            engine._hellspy_streams = lambda *a, **k: [
+                {"url": "hs:1", "label": "Pelisky.1999.1080p.CZ.mkv", "detail": "18.6 GB", "source": "hs", "_direct": True},
+                {"url": "hs:2", "label": "Pelisky (1999) 1080p BluRay CZ.mkv", "detail": "18.6 GB", "source": "hs",
+                 "_direct": True}]
+            engine._webshare_streams = lambda *a, **k: []
+            engine._webshare_subtitles = lambda *a, **k: []
+            engine._storage_streams = lambda *a, **k: []
+            cteno = []
+            engine._media_from_file = lambda url: (cteno.append(url), {})[1]
+            found = engine.raw_streams("movie", "tt1")
+            self.assertEqual([s["url"] for s in found], ["hs:1"])
+            self.assertEqual(cteno, ["hs:1"], "hlavička jen u zástupce skupiny")
+            self.assertEqual(engine.last_timings["sloučeno"], 1)
+            vse = engine.expand_streams(found, ({"name": "Pelíšky", "year": 1999}, None))
+            self.assertEqual(sorted(s["url"] for s in vse), ["hs:1", "hs:2"])
+            self.assertFalse(any(s.get("_alts") for s in vse))
+
+    def test_bez_volby_se_neslucuje(self):
+        """Stremio a HA mají jen jeden odkaz na řádek a nemají „Zobrazit všechny“."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError_("není nastaven zdroj"))
+            engine.meta = lambda *a, **k: ({"id": "tt1", "name": "Pelíšky", "year": 1999}, None)
+            engine._cross_streams = engine._webshare_streams = lambda *a, **k: []
+            engine._hellspy_streams = lambda *a, **k: [
+                {"url": f"hs:{i}", "label": f"Pelisky.1999.1080p.CZ.v{i}.mkv", "detail": "18.6 GB", "source": "hs",
+                 "_direct": True} for i in (1, 2)]
+            engine._webshare_subtitles = engine._storage_streams = lambda *a, **k: []
+            engine._media_from_file = lambda url: {}
+            self.assertEqual(len(engine.raw_streams("movie", "tt1")), 2)
+
 class TestPopisVypadku(unittest.TestCase):
     def test_bez_adresy_a_tokenu(self):
         from nokturno_core.lib.source_errors import describe_failure

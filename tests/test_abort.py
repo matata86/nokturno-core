@@ -170,6 +170,35 @@ class TestEngine(unittest.TestCase):
         self.assertEqual(engine.last_timings["hlaviček nedočteno"], 1)
         self.assertTrue(hotovo.wait(2), "pomalý soubor doběhne na pozadí")
 
+    def test_na_pozadi_se_prectou_i_sloucene_a_nad_limit(self):
+        """Přání uživatele 2026-09-18: nad rámec limitu přečíst na pozadí všechny dostupné
+        streamy i sloučené verze — do cache pro další otevření a „Zobrazit všechny“."""
+        engine = Engine({"audio_probe": "1", "probe_background": True}, self.dir)
+        cteno, vse = [], threading.Event()
+
+        def media(url):
+            cteno.append(url)
+            if len(cteno) == 4:
+                vse.set()
+            return {}
+        engine._media_from_file = media
+        engine.last_timings = {}
+        streams = [{"url": "hs:1", "label": "a", "detail": ""}, {"url": "hs:2", "label": "b", "detail": ""},
+                   {"url": "st:3", "label": "c", "detail": ""}]   # Sledujteto hlavičky nečte
+        engine._fill_audio(streams, background=[{"url": "ws:4", "label": "d"}, {"url": "ws:5", "label": "e"}])
+        self.assertTrue(vse.wait(2))
+        self.assertEqual(sorted(cteno), ["hs:1", "hs:2", "ws:4", "ws:5"])
+        self.assertEqual(engine.last_timings["hlavičky na pozadí"], 3)
+
+    def test_bez_volby_nic_na_pozadi(self):
+        engine = Engine({"audio_probe": "1"}, self.dir)
+        cteno = []
+        engine._media_from_file = lambda url: (cteno.append(url), {})[1]
+        engine._fill_audio([{"url": "hs:1", "label": "a", "detail": ""}, {"url": "hs:2", "label": "b", "detail": ""}],
+                           background=[{"url": "ws:4", "label": "d"}])
+        time.sleep(0.2)
+        self.assertEqual(cteno, ["hs:1"])
+
     def test_gather_se_stropem_vrati_i_nehotove(self):
         pool = ThreadPoolExecutor(max_workers=2)
         futures = [pool.submit(time.sleep, 0.01), pool.submit(time.sleep, 0.5)]
