@@ -97,6 +97,41 @@ class TestMenu(unittest.TestCase):
             self.assertEqual(self.api.menu(), [])
 
 
+STROM = {"version": 1, "catalogs": [
+    {"slug": "vanoce", "title": "Vánoce", "kind": "movie", "placement": "root", "icon": "christmas", "children": [
+        {"slug": "komedie", "title": "Komedie", "kind": "movie", "placement": "root", "icon": "", "children": [
+            {"slug": "ceske", "title": "České", "kind": "movie", "placement": "root", "icon": "", "children": [
+                {"slug": "hluboko", "title": "Čtvrtá úroveň", "kind": "movie", "placement": "root"}]}]},
+        {"slug": "rodinne", "title": "Rodinné", "kind": "movie", "placement": "root"},
+        {"slug": "zlo", "title": "Bez slugu", "kind": "movie", "placement": "RunScript"},
+    ]},
+]}
+
+
+class TestPodkategorie(unittest.TestCase):
+    """Složky (`children`) — strom se čistí stejným whitelistem jako kořen a ořízne se."""
+
+    def setUp(self):
+        self.api = DashApi(cache=Store(tempfile.mkdtemp()))
+
+    def test_strom_projde_whitelistem_a_orizne_se_na_max_depth(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/catalogs": STROM})):
+            menu = self.api.menu(placement="root")
+        self.assertEqual([e["slug"] for e in menu], ["vanoce"])
+        self.assertEqual([e["slug"] for e in menu[0]["children"]], ["komedie", "rodinne"])   # zlo zahozeno
+        treti = menu[0]["children"][0]["children"]
+        self.assertEqual([e["slug"] for e in treti], ["ceske"])
+        self.assertEqual(treti[0]["children"], [], "čtvrtá úroveň se nebere")
+
+    def test_group_najde_podkategorie_i_hloub(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/catalogs": STROM})):
+            self.assertEqual([e["slug"] for e in self.api.group("vanoce")], ["komedie", "rodinne"])
+            self.assertEqual([e["slug"] for e in self.api.group("komedie")], ["ceske"])
+            self.assertEqual(self.api.group("rodinne"), [])      # katalog bez podkategorií
+            self.assertEqual(self.api.group("neexistuje"), [])
+            self.assertEqual(self.api.group("../../etc"), [])
+
+
 class TestObsah(unittest.TestCase):
     def setUp(self):
         self.api = DashApi(cache=Store(tempfile.mkdtemp()))
