@@ -1445,6 +1445,28 @@ class TestVykonJadra2(unittest.TestCase):
         self.assertEqual(len([c for c in cesty if c.startswith("/movie/")]), 2, "1 dotaz na položku, ne 2")
         self.assertEqual(items[0]["genres"], ["Akční"])
 
+    def test_tmdb_imdb_id_preklada_a_cachuje(self):
+        """`imdb_id()` pro klienty Stremia, kteří posílají `tmdb:<id>` místo `tt…`."""
+        import tempfile
+        from nokturno_core.lib.store import Store
+        from nokturno_core.lib.tmdb_api import TmdbApi
+        api = TmdbApi("k", cache=Store(tempfile.mkdtemp()))
+        cesty = []
+
+        def get(path, **params):
+            cesty.append(path)
+            if path == "/tv/37738":
+                return {"external_ids": {"imdb_id": "tt1592598"}}
+            if path == "/movie/999":
+                return {"external_ids": {}}          # TMDB titul zná, IMDb id nemá
+            return None                               # TMDB titul nezná vůbec
+        api._get = get
+        self.assertEqual(api.imdb_id("series", 37738), "tt1592598")
+        self.assertEqual(api.imdb_id("series", 37738), "tt1592598")
+        self.assertEqual(cesty.count("/tv/37738"), 1, "detail je cachovaný, ne dotaz na požadavek")
+        self.assertEqual(api.imdb_id("movie", 999), "")
+        self.assertEqual(api.imdb_id("movie", 12345), "")
+
     def test_tmdb_detail_obsazeni_hlasy_trailer_rating(self):
         """Obsazení s fotkou a rolí, počet hlasů, věkový rating (přednost CZ před US)
         a YouTube id traileru (přednost oficiálnímu traileru před jiným videem)."""
