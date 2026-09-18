@@ -55,7 +55,8 @@ nokturno_core/
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
 │   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
-│   └── store.py sync.py stats.py trakt_api.py enrich.py sosac_api.py
+│   ├── sync.py syncbox.py                          synchronizace přes HA / přes slepý relay
+│   └── store.py stats.py trakt_api.py enrich.py sosac_api.py
 └── ...
 ```
 
@@ -104,3 +105,133 @@ z větve pro Home Assistant.
   dostává `agent` od hostitele.
 - Pryč diagnostické lešení Sledujteto (`last_keys`, `last_sample`, INFO logování), `HISTORY_MAX`,
   `_logged` v qBittorrentu, prázdná větev v `sosac_direct.streams`; `urllib.error` importovaný explicitně.
+
+## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
+
+Dnešní `sync.py` umí vyměňovat stav mezi více Kodi, ale potřebuje k tomu HA jako
+střed (`POST /api/nokturno/sync`). `syncbox.py` dává tutéž funkci i domácnostem
+bez HA — střed dělá dashboard, ale **jen jako slepý relay**: ukládá neprůhledné
+bloby, které nedokáže přečíst. Zadání uživatele (2026-09-17): anonymní, a nastavení
+včetně účtů se synchronizuje taky, ale musí jít nezvolit.
+
+> **Stav k 2026-09-17:** klient (`lib/syncbox.py`, 27 testů) i server
+> (`Dashboard/backend/syncrelay.py`, 19 testů) hotové a ověřené proti sobě —
+> stav dojde na druhé zařízení a v uloženém blobu se nedá najít název titulu ani
+> jeho id. **Chybí UI v doplňku** (párování, kategorie nastavení, napojení na
+> službu) a **okruhy `settings`/`accounts`** — ty jsou zatím jen návrh níž.
+> Vyvíjí se ve větvi `sync` (`Nokturno/sync-dev/`), nevydává se.
+
+**Protokol slévání se nemění.** `collect_changes()` / `apply_changes()` zůstávají
+jak jsou — slévání je last-write-wins podle `ts`, tedy komutativní, takže
+nezáleží, v jakém pořadí a od koho záznamy přijdou. To je celý důvod, proč relay
+nemusí nic chápat: každý klient si slije cizí stavy sám u sebe.
+
+### Skupina a kód
+
+Master vygeneruje **kód**: 16 znaků Crockford Base32 (bez `I`, `L`, `O`, `U`, ať
+se nepřepisuje špatně z TV), zobrazený jako `NKT-XXXX-XXXX-XXXX-XXXX` — 80 bitů
+entropie. Kód je zároveň klíč; **na server nejde nikdy**, ani v hashované podobě
+jinak než takto:
+
+```python
+root     = hashlib.pbkdf2_hmac("sha256", kod.encode(), b"nokturno-sync-v1", 200_000)
+group_id = hmac.new(root, b"gid", hashlib.sha256).hexdigest()[:32]   # jen tohle vidí server
+enc_key  = hmac.new(root, b"enc", hashlib.sha256).digest()
+mac_key  = hmac.new(root, b"mac", hashlib.sha256).digest()
+```
+
+`group_id` je z kódu odvozené jednosměrně, takže slouží zároveň jako adresa
+skupiny i jako bearer token relaye: kdo ho zná, smí do skupiny psát a číst z ní,
+ale bez kódu nic nedešifruje. **Proto nesmí být v URL** (Tailscale i nginx logují
+cesty) — patří do hlavičky `X-Nokturno-Group`.
+
+### Šifrování jen ze stdlib
+
+Doplněk pro Kodi má dodnes jedinou závislost (`xbmc.python`) a stálo by to za to
+udržet — `script.module.pycryptodome` by u stovky už nasazených instalací
+znamenal, že si aktualizaci nestáhne každý, kdo má vypnuté oficiální repo.
+Stdlib stačí: `hashlib`, `hmac`, `os.urandom`. Nevymýšlí se šifra, skládají se
+standardní primitiva (SHA-256 v counter módu jako proudová šifra +
+encrypt-then-MAC):
+
+```
+blob   = nonce(16 B) || ciphertext || tag(32 B)
+proud  = SHA-256(enc_key || nonce || counter_be64)   pro counter = 0, 1, 2, …
+ciphertext = gzip(json) XOR proud
+tag    = HMAC-SHA256(mac_key, nonce || ciphertext)
+```
+
+Tag se ověřuje `hmac.compare_digest` **před** dešifrováním; neplatný blob se
+tiše zahodí. Naměřeno na plném stavu (5000 záznamů `watched`): 511 kB JSON →
+gzip 13 kB → celé zabalení **8 ms**. Bez komprese by to bylo 102 ms a 511 kB, takže
+gzip před šifrováním není optimalizace, ale součást návrhu.
+
+### Celý stav místo delt
+
+Protože komprimovaný stav je jednotky až desítky kB, **odpadá delta protokol**:
+každé zařízení nahraje celý svůj pohled (`collect_changes(store, 0)`) a relay
+drží jeden přepisovaný řádek na zařízení. Nová instalace tím dostane všechno,
+odpadá fronta i úklid delt a ztracený blob nic nerozbije. Nahrává se jen při
+změně otisku (klient si pamatuje hash posledního odeslaného blobu).
+
+**Pozor na `items`** — snímky titulů jsou v celém stavu dominantní (2000 položek
+s popisem a obrázky je řádově stovky kB i po gzipu). Do blobu patří jen snímky
+k položkám v Mém seznamu a rozkoukaným, zbytek si příjemce dohledá sám —
+`recover_snapshot()` (hubený snímek, od Kodi `5.2.7~beta11`) na to už existuje.
+Reálnou velikost je potřeba změřit na skutečném profilu, ne odhadovat.
+
+### Okruhy (co se synchronizuje)
+
+Pět nezávislých okruhů, každý zapínatelný na každém zařízení zvlášť; posílá se
+i přijímá jen to, co je zapnuté:
+
+| Okruh | Obsah | Výchozí |
+|-------|-------|---------|
+| `watched` | zhlédnuto a rozkoukanost (`watched.json`) | zap |
+| `favourites` | Můj seznam přes deník `favlog` | zap |
+| `history` | historie hledání (`histlog`) | zap |
+| `settings` | nastavení doplňku bez hesel | **vyp** |
+| `accounts` | přihlášení ke zdrojům (WebShare, HellSpy, Sledujteto, FastShare, Sosáč, úložiště) | **vyp** |
+
+Master smí do skupiny zapsat **doporučené** okruhy (šifrovaný konfigurační blob),
+které si nový člen předvyplní. Vynutit je nemůže a ani nemá — server do obsahu
+nevidí, takže jediná vynucovací vrstva je klient sám.
+
+`settings`/`accounts` se serializují podle schématu, které už umí
+`remote_setup.remote_setup_schema()` (čte `settings.xml` po skupinách, zná typ
+`password`). Nutný je **explicitní seznam nastavení vázaných na zařízení**, která
+se nesynchronizují nikdy — složka pro stahování, jazyk rozhraní, adresa lokální
+Luny, `stats_enabled`, `crash_reports` a samotné nastavení synchronizace. Bez
+takového seznamu by sdílení nastavení rozbilo každý box, který má něco svého.
+
+### Co plyne z toho, že kód je klíč
+
+- **Schvalování masterem nechrání data.** Kdo má kód, dešifruje obsah bez ohledu
+  na to, jestli ho master „pustil dovnitř". Skutečná ochrana je jediná: kód platí
+  krátce (server přijme nové `device_id` do skupiny jen v okně po založení nebo
+  po výslovném otevření masterem — to je metadata, ta server vidět smí) a v UI
+  se ukazuje jen, dokud se opisuje.
+- **Odebrání zařízení = nový kód.** Jinak to v end-to-end světě nejde; ostatní
+  se musí spárovat znovu. V UI to musí být napsané, ne objevené.
+- **Účty v okruhu `accounts` jsou chráněné jen kódem.** Zapnutí okruhu musí být
+  potvrzené textem, který to říká nahlas.
+- **Ztracený kód = ztracená skupina.** Server neumí obnovu, protože nemá co obnovit.
+
+### Sloučení stavu — na co si dát pozor
+
+- **Rozkoukanost je konfliktní.** Dva lidé na dvou TV u téhož seriálu si LWW
+  navzájem přepíšou pozici. Minimum: dokoukaný titul se nikdy nevrátí na
+  rozkoukaný. Ke zvážení „vyhrává větší pozice" místo „vyhrává novější zápis".
+- **Rozbité hodiny.** Android box po výpadku napíše `ts` z budoucnosti a LWW ten
+  záznam zafixuje napořád. Relay čas nevidí (blob je šifrovaný), takže clamp musí
+  dělat příjemce při `apply_changes` — odmítnout `ts` výrazně nad vlastním časem.
+- **Trim není smazání.** `WATCHED_MAX` ořízne nejstarší záznamy; oříznutí se
+  nesmí projevit jako změna k odeslání, jinak by se stav postupně vyprazdňoval
+  napříč skupinou.
+
+### Anonymita
+
+Relay ukládá `group_id`, `device_id` (náhodné, generované klientem), pořadí
+revize, čas a blob. **Žádnou vazbu na `install_id` ze statistik** — jinak by šlo
+spárovat anonymní hlášení s konkrétní domácností a celá anonymita statistik by
+padla. Zařízení, které se dlouho neozve, se maže i s blobem.
