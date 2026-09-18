@@ -1720,3 +1720,84 @@ class TestProrezavaniCache(unittest.TestCase):
         self.assertEqual(store.prune_cache(72 * 3600), 1)
         self.assertEqual(len(list(cache.glob("*.json"))), 1)
         self.assertEqual(Store(tempfile.mkdtemp()).prune_cache(), 0, "bez složky cache nic")
+
+
+class TestWebshareTitulky(unittest.TestCase):
+    """`_webshare_subtitles()` — fulltext WebShare je volný, filtr musí být přísný.
+
+    Ostrý případ z 2026-09-18: „Outlander: Blood of My Blood" S02E01 dostal titulky
+    k S01E04 a S01E05, protože se hlídala jen slova názvu.
+    """
+
+    SOUBORY = [
+        ("Outlander.Blood.of.my.Blood.S01E04.720p.WEB-DL-Mafi10.srt", "srt", "a"),
+        ("outlander.blood.of.my.blood.s01e05.1080p.web.h264-Mafi10.srt", "srt", "b"),
+        ("Outlander.Blood.of.my.Blood.S02E01.1080p.WEB.h264 CZ.srt", "srt", "c"),
+        ("Outlander.Blood.of.my.Blood.S02E01.720p.WEB-DL SK.srt", "srt", "d"),
+        ("Outlander.Blood.of.my.Blood.S02E01.1080p.WEB.h264.srt", "srt", "e"),
+        ("Outlander.Blood.of.my.Blood.S02E01.1080p.WEB.h264.mkv", "video", "f"),
+        ("Agents of SHIELD S02E01 - The Frenemy of My Enemy.srt", "srt", "g"),
+    ]
+
+    def _engine(self, tmp, pref="CZ", soubory=None):
+        import xml.etree.ElementTree as ET
+        engine = Engine({"pref_lang": pref}, tmp)
+
+        class Ws:
+            def _with_token(self, endpoint, **data):
+                root = ET.Element("response")
+                for name, kind, ident in (soubory if soubory is not None else TestWebshareTitulky.SOUBORY):
+                    f = ET.SubElement(root, "file")
+                    ET.SubElement(f, "name").text = name
+                    ET.SubElement(f, "type").text = kind
+                    ET.SubElement(f, "ident").text = ident
+                return root
+        engine._ws, engine._ws_ready = Ws(), True
+        engine.original_titles = lambda *a, **k: ["Cizinka: Krev mé krve"]
+        return engine
+
+    META = {"id": "tt18332852", "name": "Outlander: Blood of My Blood",
+            "_title": "Outlander: Blood of My Blood"}
+
+    def test_jen_pozadovany_dil(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            refs = engine._webshare_subtitles(self.META, {"season": 2, "episode": 1}, "series")
+            self.assertNotIn("ws:a", refs, "titulky k S01E04 nepatří k S02E01")
+            self.assertNotIn("ws:b", refs)
+            self.assertNotIn("ws:f", refs, "video není titulek")
+            self.assertNotIn("ws:g", refs, "jiný seriál")
+            self.assertEqual(set(refs), {"ws:c", "ws:d", "ws:e"})
+
+    def test_preferovany_jazyk_prvni(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            refs = self._engine(tmp, "CZ")._webshare_subtitles(
+                self.META, {"season": 2, "episode": 1}, "series")
+            self.assertEqual(refs, ["ws:c", "ws:d", "ws:e"], "CZ, pak SK, pak neoznačené")
+            refs = self._engine(tmp, "SK")._webshare_subtitles(
+                self.META, {"season": 2, "episode": 1}, "series")
+            self.assertEqual(refs, ["ws:d", "ws:c", "ws:e"], "s předvolbou SK naopak")
+
+    def test_bez_dilu_v_nazvu_nic(self):
+        soubory = [("Outlander.Blood.of.my.Blood.S01E04.720p CZ.srt", "srt", "a")]
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, "CZ", soubory)
+            self.assertEqual(engine._webshare_subtitles(self.META, {"season": 2, "episode": 1}, "series"), [],
+                             "radši žádné titulky než titulky k jinému dílu")
+
+    def test_film_se_dil_nekontroluje(self):
+        soubory = [("Matrix.1999.1080p CZ.srt", "srt", "a")]
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp, "CZ", soubory)
+            engine.original_titles = lambda *a, **k: []
+            meta = {"id": "tt0133093", "name": "Matrix", "_title": "Matrix", "year": 1999}
+            self.assertEqual(engine._webshare_subtitles(meta, None, "movie"), ["ws:a"])
+
+    def test_rank_jazyka(self):
+        from nokturno_core.engine import _subtitle_rank
+        poradi = ("CZ", "SK")
+        self.assertEqual(_subtitle_rank("film.cz.srt", poradi), 0)
+        self.assertEqual(_subtitle_rank("film.sk.srt", poradi), 1)
+        self.assertEqual(_subtitle_rank("film.web-dl.srt", poradi), 2, "bez značky za preferované")
+        self.assertEqual(_subtitle_rank("film.eng.srt", poradi), 3, "cizí jazyk nakonec")
+        self.assertEqual(_subtitle_rank("film.cz.srt", ()), 0, "bez předvolby se pořadí z WebShare nemění")
