@@ -1144,6 +1144,34 @@ class TestSkrytyDalsiDil(unittest.TestCase):
             self.assertEqual(collect_changes(s, 0)["next_hidden"], {})
 
 
+class TestSyncPodlePrijmu(unittest.TestCase):
+    """Zpožděně poslaná změna musí dojít i Kodi, které se mezitím synchronizovalo."""
+
+    def test_pozdni_push_dojde_druhemu_zarizeni(self):
+        from nokturno_core.lib.store import Store
+        from nokturno_core.lib.sync import apply_changes, collect_changes
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            ha, office = Store(a), Store(b)
+            office.add_history("any", "avatar")
+            office.clear_history("any")          # ts změny je teď, push přijde až později
+            zmena = collect_changes(office, 0)
+            for rec in zmena["histlog"].values():
+                rec["ts"] -= 600
+            since_obyvak = int(time.time()) - 60  # Obývák se synchronizoval po vzniku změny
+            apply_changes(ha, zmena, stamp=True)
+            vrat = collect_changes(ha, since_obyvak)["histlog"]
+            self.assertEqual(len(vrat), 1)
+            self.assertIn("rts", next(iter(vrat.values())))
+
+    def test_zarizeni_rts_nenosi(self):
+        from nokturno_core.lib.store import Store
+        from nokturno_core.lib.sync import apply_changes
+        with tempfile.TemporaryDirectory() as a:
+            s = Store(a)
+            apply_changes(s, {"histlog": {"any\tx": {"kind": "any", "q": "x", "on": True, "ts": 5, "rts": 9}}})
+            self.assertNotIn("rts", s.load("histlog", {})["any\tx"])
+
+
 class TestTmdbKatalogy(unittest.TestCase):
     """Sjednocené menu Filmy/Seriály počítá s katalogy trendů a roku z TMDB."""
 
