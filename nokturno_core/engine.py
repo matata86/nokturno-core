@@ -305,6 +305,7 @@ class Engine:
         self._st = None
         self._fs = None
         self._cz = None
+        self._cz_paired = self._cztor_paired()
         self._storages = None
         self._cinemeta = None
         self._sosac_db = None
@@ -327,6 +328,7 @@ class Engine:
         self._st = None
         self._fs = None
         self._cz = None
+        self._cz_paired = self._cztor_paired()
         self._storages = None
         self._tmdb = None
         self._prowlarr = self._qbit = None
@@ -431,6 +433,11 @@ class Engine:
             if client.paired():
                 self._cz = client
         return self._cz
+
+    def _cztor_paired(self):
+        """Spárovaný CZtor — zjišťuje se při založení enginu (v HA v executoru), protože
+        `sources()` čte HA i ze smyčky událostí, kam čtení souboru s tokeny nepatří."""
+        return bool(self._opt(CONF_CZ_ENABLED, False)) and self.cztor_client().paired()
 
     def cztor_client(self):
         """Klient CZtor i bez spárování — pro párování PINem a stav účtu v nastavení."""
@@ -547,7 +554,7 @@ class Engine:
                 "hellspy": bool(self._opt(CONF_HS_ENABLED, False)),
                 "sledujteto": bool(str(self._opt("st_email") or "").strip()),
                 "fastshare": bool(str(self._opt("fs_username") or "").strip()),
-                "cztor": bool(self._opt(CONF_CZ_ENABLED, False)) and self.cztor_client().paired(),
+                "cztor": self._cz_paired,
                 "storage": bool(self.storages),
                 "torrent": self.prowlarr is not None}
 

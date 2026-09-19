@@ -225,8 +225,8 @@ class TestVEnginu(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
 
     def engine(self, enabled=True):
-        eng = Engine({"cz_enabled": enabled}, self.tmp)
         paired_api(self.tmp)                       # uloží spárovanou relaci do úložiště enginu
+        eng = Engine({"cz_enabled": enabled}, self.tmp)
         eng.cztor_client = lambda: self._client(eng)
         eng.original_titles = lambda meta, ctype, alt=None: []
         return eng
