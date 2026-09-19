@@ -326,7 +326,8 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             out = engine.raw_streams("movie", "tt1", strict=False)
             self.assertFalse(seen["strict"])
             self.assertTrue(out and out[0]["_loose"])
-            self.assertIsNone(engine.store.cached_if("streams5:movie:tt1:", 3600, lambda: None), "uvolněný výsledek se necachuje")
+            self.assertIsNone(engine.store.cached_if(engine._streams_cache_key("movie", "tt1"), 3600, lambda: None),
+                              "uvolněný výsledek se necachuje")
             out = engine.raw_streams("movie", "tt1")
             self.assertTrue(seen["strict"])
             self.assertFalse(out[0].get("_loose"))
@@ -590,6 +591,92 @@ class TestVypadekZdroje(unittest.TestCase):
             self.assertEqual(len(found), 1, "stream z WebShare musí zůstat")
             self.assertNotIn("NAS", [label for label, _e in failures], "vlastní úložiště se nesmí ani zkusit")
 
+
+
+class TestAudit20260919(unittest.TestCase):
+    """Nálezy auditu jádra 2026-09-19 (viz Nokturno/AUDIT-2026-09-19.md)."""
+
+    def _engine(self, tmp, **options):
+        engine = Engine(options, tmp)
+        engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError("není nastaven"))
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Film", "year": 2020}, None)
+        engine._cross_streams = lambda *a, **k: []
+        engine._fill_audio = lambda streams, *a, **k: streams
+        engine._hellspy_streams = lambda *a, **k: []
+        engine._webshare_subtitles = lambda *a, **k: []
+        engine._webshare_streams = lambda *a, **k: [
+            {"url": "ws:abc", "label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB", "source": "ws", "_direct": True}]
+        return engine
+
+    def test_selhany_login_webshare_je_vypadek(self):
+        """Seznam bez hlavního zdroje se dřív uložil na 72 h — `self.ws` vrátilo None a
+        `_webshare_streams` tiše prázdno, nic ve `failures`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"ws_username": "u", "ws_password": "p"}, tmp)
+            engine._ws_ready, engine._ws = False, None
+            engine._ws_retry_after = time.time() + 3600
+            engine.ws_error = webshare_api.WebshareError("síť")
+            failures = []
+            self.assertEqual(engine._webshare_streams({"name": "Film"}, failures=failures), [])
+            self.assertEqual([l for l, _e in failures], ["WebShare"])
+            bez = Engine({}, tmp)
+            failures = []
+            self.assertEqual(bez._webshare_streams({"name": "Film"}, failures=failures), [])
+            self.assertEqual(failures, [], "bez účtu není co hlásit")
+
+    def test_klic_cache_streamu_nese_otisk_zdroju(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Engine({}, tmp)._streams_cache_key("movie", "tt1")
+            b = Engine({"hs_enabled": True}, tmp)._streams_cache_key("movie", "tt1")
+            c = Engine({"ws_username": "u"}, tmp)._streams_cache_key("movie", "tt1")
+            self.assertEqual(len({a, b, c}), 3)
+            self.assertEqual(a, Engine({}, tmp)._streams_cache_key("movie", "tt1"), "stejné nastavení = stejný klíč")
+            self.assertTrue(a.startswith("streams6:movie:tt1:"))
+
+    def test_titulky_jen_pri_probe_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            volani = []
+            engine._webshare_subtitles = lambda *a, **k: volani.append(1) or []
+            engine.raw_streams("movie", "tt1", probe_audio=False)
+            self.assertEqual(volani, [], "hromadná klasifikace titulky nepoužije")
+            engine.raw_streams("movie", "tt1")
+            self.assertEqual(volani, [1])
+
+    def test_pomaly_zdroj_neblokuje_ostatni(self):
+        """`kolo()` čekalo na nejpomalejší zdroj bez stropu; teď `SOURCE_DEADLINE` a opozdilec
+        je výpadek (výsledek se necachuje), ostatní streamy přijdou hned."""
+        from nokturno_core import engine as mod
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            engine._hellspy_streams = lambda *a, **k: time.sleep(2) or []
+            puvodni = mod.SOURCE_DEADLINE
+            mod.SOURCE_DEADLINE = 0.3
+            try:
+                failures = []
+                t = time.monotonic()
+                found = engine.streams("movie", "tt1", failures=failures)
+            finally:
+                mod.SOURCE_DEADLINE = puvodni
+            self.assertLess(time.monotonic() - t, 1.5)
+            self.assertEqual(len(found), 1)
+            self.assertEqual([l for l, _e in failures], ["HellSpy"])
+            self.assertIn("neodpověděl", str(failures[0][1]))
+
+    def test_hs_odkaz_s_nesmyslem_se_odmitne(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            for zly in ("hs:../x:abc", "hs:12?x=1:abc", "hs:12:ab/cd", "hs::"):
+                with self.assertRaises(NokturnoError, msg=zly):
+                    engine.resolve(zly)
+
+    def test_dotazy_jen_z_prvnich_variant_nazvu(self):
+        from nokturno_core import engine as mod
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            engine.original_titles = lambda *a, **k: [f"Orig{i}" for i in range(8)]
+            queries, _relevant = engine._title_queries({"name": "Film", "year": 2020})
+            self.assertEqual(len(queries), 2 + mod.MAX_TITLE_VARIANTS)
 
 
 class TestSoubezneHledani(unittest.TestCase):

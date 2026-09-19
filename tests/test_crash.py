@@ -75,6 +75,17 @@ class TestScrub(unittest.TestCase):
         self.assertNotIn("Users\\Jan", text)
         self.assertNotIn("a1b2c3d4e5f6", text)
 
+    def test_basic_bearer_a_ipv6(self):
+        """Audit 2026-09-19: `Basic <base64 bez číslice>` a `Bearer …` procházely, IPv6 taky."""
+        text = scrub("'Authorization': 'Basic dGFqbmVoZXNsbw==' Bearer eyJhbGciOiJIUzI1NiJ9.abc "
+                     "klient 2a09:bac1:1da0:10::1f:b9 a fe80::1 v 20:03:59 spadl")
+        self.assertNotIn("dGFqbmVoZXNsbw", text)
+        self.assertNotIn("eyJhbGci", text)
+        self.assertNotIn("2a09:bac1", text)
+        self.assertNotIn("fe80::1", text)
+        self.assertIn("20:03:59", text, "čas není IPv6")
+        self.assertIn("Bearer ***", text)
+
     def test_nastaveni_stremia_v_ceste(self):
         self.assertEqual(scrub("GET /c/eyJ3cyI6InVzZXIifQ/stream/movie/tt1.json"),
                          "GET /c/<nastavení>/stream/movie/tt1.json")
