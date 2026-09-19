@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from .lib.abort import Aborted, check as check_stop, gather, never
-from .lib.const import CONF_HS_ENABLED, DEFAULT_SORT, LANGS, SORT_ORDERS
+from .lib.const import CONF_CZ_ENABLED, CONF_HS_ENABLED, DEFAULT_SORT, LANGS, SORT_ORDERS
 from .lib.cinemeta_api import CinemetaApi, CinemetaError
 from .lib.enrich import DEAD_IMAGES, _capped, _cinemeta, _fetch, _fetch_title, enrich, enrich_one
 from .lib.luna_api import LunaApi, LunaError, clean_label, parse_base_url, parse_token
@@ -426,7 +426,7 @@ class Engine:
     def cz(self):
         """CZtor — jen se zapnutým přepínačem a spárovaným zařízením (tokeny drží
         úložiště jádra, párování dělá hostitel přes `cztor_client()`)."""
-        if self._cz is None and self._opt("cz_enabled", False):
+        if self._cz is None and self._opt(CONF_CZ_ENABLED, False):
             client = self.cztor_client()
             if client.paired():
                 self._cz = client
@@ -547,7 +547,7 @@ class Engine:
                 "hellspy": bool(self._opt(CONF_HS_ENABLED, False)),
                 "sledujteto": bool(str(self._opt("st_email") or "").strip()),
                 "fastshare": bool(str(self._opt("fs_username") or "").strip()),
-                "cztor": bool(self._opt("cz_enabled", False)) and self.cztor_client().paired(),
+                "cztor": bool(self._opt(CONF_CZ_ENABLED, False)) and self.cztor_client().paired(),
                 "storage": bool(self.storages),
                 "torrent": self.prowlarr is not None}
 
