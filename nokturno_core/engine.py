@@ -29,11 +29,12 @@ from .lib.sosac_api import SosacError, names_match
 from .lib.sosac_api import is_sosac_id as _is_legacy_sosac_id
 from .lib.sosac_direct import SosacDirect, is_direct_id
 from .lib.store import Store
-from .lib.streams import arrange, estimate_rank, expand_groups, fold, group_streams, langs_from_name, parse_stream
+from .lib.streams import arrange, estimate_rank, expand_groups, fold, group_streams, langs_from_name, parse_stream, stream_hdr
 from .lib.tracks import SUBTITLE_FALLBACK
 from .lib.hellspy_api import HellspyApi, HellspyError
 from .lib.sledujteto_api import SledujtetoApi, SledujtetoError
 from .lib.fastshare_api import FastshareApi, FastshareError, make_ref as fastshare_ref
+from .lib.cztor_api import CztorApi, CztorError
 from .lib.storage_api import StorageApi, StorageError, match_texts, parse_ref
 from .lib.wikidata_api import local_titles
 from .lib.mediainfo import describe as describe_media, probe as probe_media, quality_from_size
@@ -68,7 +69,7 @@ PROBE_DEADLINE = 3.0
 SUBS_TASK = "Titulky"   # úloha v souběžném hledání streamů, ne zdroj (nehlásí se do průběhu ani výpadků)
 
 SOURCE_NAMES = {"main": "Luna", "search": "WebShare", "ws": "WebShare", "sosac": "Sosáč",
-                "hs": "HellSpy", "st": "Sledujteto", "fs": "FastShare", "torrent": "Torrent", "dav": "Úložiště"}
+                "hs": "HellSpy", "st": "Sledujteto", "fs": "FastShare", "cz": "CZtor", "torrent": "Torrent", "dav": "Úložiště"}
 
 # vlastní úložiště (WebDAV) — až tři, každé s adresou, jménem, heslem a názvem;
 # klíče jsou vypsané celé, ať je najde kontrola nastavení v testech konzumentů
@@ -303,6 +304,7 @@ class Engine:
         self._hs = None
         self._st = None
         self._fs = None
+        self._cz = None
         self._storages = None
         self._cinemeta = None
         self._sosac_db = None
@@ -324,6 +326,7 @@ class Engine:
         self._hs = None
         self._st = None
         self._fs = None
+        self._cz = None
         self._storages = None
         self._tmdb = None
         self._prowlarr = self._qbit = None
@@ -418,6 +421,20 @@ class Engine:
             if user and self._opt("fs_password"):
                 self._fs = FastshareApi(user, self._opt("fs_password"), cache=self.store)
         return self._fs
+
+    @property
+    def cz(self):
+        """CZtor — jen se zapnutým přepínačem a spárovaným zařízením (tokeny drží
+        úložiště jádra, párování dělá hostitel přes `cztor_client()`)."""
+        if self._cz is None and self._opt("cz_enabled", False):
+            client = self.cztor_client()
+            if client.paired():
+                self._cz = client
+        return self._cz
+
+    def cztor_client(self):
+        """Klient CZtor i bez spárování — pro párování PINem a stav účtu v nastavení."""
+        return CztorApi(self.store, device_name=str(self._opt("cz_device_name") or "Nokturno"))
 
     @property
     def storages(self):
@@ -530,6 +547,7 @@ class Engine:
                 "hellspy": bool(self._opt(CONF_HS_ENABLED, False)),
                 "sledujteto": bool(str(self._opt("st_email") or "").strip()),
                 "fastshare": bool(str(self._opt("fs_username") or "").strip()),
+                "cztor": bool(self._opt("cz_enabled", False)) and self.cztor_client().paired(),
                 "storage": bool(self.storages),
                 "torrent": self.prowlarr is not None}
 
@@ -1555,6 +1573,51 @@ class Engine:
                 out.append(stream)
         return out
 
+    def _cztor_streams(self, meta, video=None, ctype="movie", alt=None, failures=None):
+        """Tentýž titul v CZtor. Páruje se přes IMDb id, název a rok jen u titulů bez
+        id (viz `lib/cztor_api`). Zvuk, titulky a rozlišení posílá API, takže stream
+        je rovnou „ověřený" (`_tracks`, `_media`) a hlavička souboru se nečte."""
+        if not self.cz:
+            return []
+        title = meta.get("_title") or meta.get("name") or ""
+        titles = [title] + self.original_titles(meta, ctype, alt)
+        imdb = meta.get("imdb_id") or (meta.get("id") if str(meta.get("id", "")).startswith("tt") else "")
+        try:
+            items = self.cz.find_titles("series" if video else ctype, titles, self._year(meta), imdb=imdb)
+            found = []
+            for item in items:
+                self._check_stop()
+                if video:
+                    episode_id = self.cz.episode_id(item, video.get("season") or 0, video.get("episode") or 0)
+                    if episode_id:
+                        found += self.cz.streams("e", episode_id)
+                else:
+                    found += self.cz.streams("m", item["id"])
+        except CztorError as err:
+            _LOGGER.warning("CZtor „%s“: %s", title, err)
+            if failures is not None:
+                failures.append(("CZtor", err))
+            return []
+        out = []
+        for f in found:
+            info = f["media"]
+            text = describe_media(info)
+            label = f["name"]
+            if (f.get("hdr") or f.get("dv")) and not stream_hdr({"label": label}):
+                label = f"{label} [{'DV' if f.get('dv') else 'HDR'}]"
+            out.append({
+                "url": f["ref"],
+                "label": label,
+                "detail": " | ".join(p for p in (f.get("size_h") or "", text) if p),
+                "quality": quality_from_size(info.get("width") or 0, info.get("height") or 0) or "",
+                "source": "cz",
+                "_duration": info.get("duration") or 0,
+                "_tracks": info.get("audio") or [],
+                "_media": info,
+                "_direct": True,
+            })
+        return out
+
     def _storage_streams(self, meta, video=None, ctype="movie", alt=None, strict=True, failures=None):
         """Tentýž titul ve vlastních úložištích — stejný přísný filtr jako fulltext,
         jen se nehledá po síti, ale v zapamatovaném seznamu souborů. Soubor se
@@ -1650,7 +1713,8 @@ class Engine:
         párování. O jednu úroveň jinak odhadnutá kvalita proto nesmí párování
         zablokovat, jen se u ní vyžaduje mnohem těsnější shoda velikosti.
         """
-        direct = [s for s in streams if s.get("_direct") and (s.get("size_gb") or 0) > 0]
+        # CZtor je samostatný zdroj s vlastními údaji o souboru — k Luně se nepřibaluje
+        direct = [s for s in streams if s.get("_direct") and s.get("source") != "cz" and (s.get("size_gb") or 0) > 0]
         used, out = set(), []
         for stream in streams:
             if stream.get("_direct"):
@@ -1974,7 +2038,7 @@ class Engine:
         return mbps * 1_000_000 * seconds / 8 / 2 ** 30
 
     # kroků v _fetch_streams(), než začne (obvykle nejdelší) čtení hlaviček
-    STREAM_SOURCE_STEPS = 7   # hlavní zdroj + pět dalších + titulky, viz `_fetch_streams`
+    STREAM_SOURCE_STEPS = 8   # hlavní zdroj + šest dalších + titulky, viz `_fetch_streams`
 
     def streams(self, ctype, item_id, alt=None, series_id=None, on_progress=None, failures=None):
         """Seřazené streamy titulu ze všech dostupných zdrojů, popsané pro HA/Stremio
@@ -2080,7 +2144,7 @@ class Engine:
 
             # Líné klienty (login WebShare) založit ještě tady, v hlavním vlákně, ať se
             # vlákna neperou o `_ws_ready`.
-            self.ws, self.hs, self.st, self.fs, self.sosac  # noqa: B018 – jen inicializace
+            self.ws, self.hs, self.st, self.fs, self.cz, self.sosac  # noqa: B018 – jen inicializace
             cross = self._cross_streams if self._opt("cross_search", True) else (lambda *a, **k: [])
 
             def ostatni(m):
@@ -2091,6 +2155,7 @@ class Engine:
                     ("HellSpy", lambda: self._hellspy_streams(m, video, ctype, alt, strict, failures)),
                     ("Sledujteto", lambda: self._sledujteto_streams(m, video, ctype, alt, strict, failures)),
                     ("FastShare", lambda: self._fastshare_streams(m, video, ctype, alt, strict, failures)),
+                    ("CZtor", lambda: self._cztor_streams(m, video, ctype, alt, failures)),
                     (SUBS_TASK, lambda: self._webshare_subtitles(m, video, ctype, alt)),
                 )
 
@@ -2349,6 +2414,13 @@ class Engine:
                 return self._fastshare_api().kodi_url(url)
             except FastshareError as err:
                 raise NokturnoError(f"FastShare: {err}") from err
+        if url.startswith("cz:"):
+            if self.cz is None:
+                raise NokturnoError("CZtor není zapnutý nebo spárovaný.")
+            try:
+                return self.cz.resolve(url)
+            except CztorError as err:
+                raise NokturnoError(f"CZtor: {err}") from err
         if url.startswith("dav:"):
             api, path = self.storage_for(url)
             try:
