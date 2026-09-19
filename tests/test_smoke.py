@@ -1445,6 +1445,25 @@ class TestVykonZdroju(unittest.TestCase):
             self.assertEqual([s["source"] for s in out], ["Luna", "WebShare", "Sledujteto"])
             self.assertEqual([f[0] for f in failures], ["HellSpy"])
 
+    def test_hellspy_429_ukonci_hledani_po_prvnim_dotazu(self):
+        """429 = omezená IP: další dotazy stejného hledání se neposílají, chyba se hlásí jednou."""
+        from nokturno_core.lib.hellspy_api import HellspyRateLimited
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"hs_enabled": True}, tmp)
+            dotazy = []
+
+            class Hs:
+                def search(self, query, limit=40, offset=0):
+                    dotazy.append(query)
+                    raise HellspyRateLimited("HTTP 429")
+            engine._hs = Hs()
+            engine._title_queries = lambda *a, **k: (["a", "b", "c"], lambda name: True)
+            failures = []
+            out = engine._hellspy_streams({"name": "Film", "year": 2020}, failures=failures)
+            self.assertEqual(out, [])
+            self.assertEqual(dotazy, ["a"])
+            self.assertEqual([f[0] for f in failures], ["HellSpy"])
+
     def test_original_titles_jednou_za_vypis(self):
         with tempfile.TemporaryDirectory() as tmp:
             engine = Engine({"streamuj_username": "u", "streamuj_password": "p"}, tmp)
