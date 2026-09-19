@@ -2,7 +2,7 @@
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-podpo%C5%99%20autora-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/matata86) [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
 
-Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, Luně
+Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, CZtoru, Luně
 a na trackerech přes Prowlarr — bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
@@ -119,6 +119,39 @@ Proč je to potřeba: **manifest Luna vydá i pro neplatný token** (jen s vých
 nastavením), takže kontrola „přišel manifest = zdroj funguje" byla falešně zelená.
 Ověřit token jde jedině dotazem na streamy, a to na víc titulech — hlavní zdroj
 Luny nemá všechno.
+
+## CZtor (`lib/cztor_api.py`, 2026-09-19)
+
+Sedmý zdroj: katalog na předplatné (cztor.com, soubory na giganthost.com). API je to,
+které používá jejich doplněk pro Kodi (`plugin.video.cztor` 0.1.27), ověřené naživo
+na testovacím účtu. Bez tokenu vrací všechno 401.
+
+- **Párování PINem, žádné heslo.** `start_pin()` → PIN, uživatel ho potvrdí na
+  `cztor.com/activate`, `poll_pin()` uloží tokeny do úložiště jádra (`cztor_session`,
+  spolu s `device_id`). Hostitel jen kreslí PIN a ptá se (Kodi `DialogProgress`,
+  HA krok `cztor` v nastavení integrace).
+- **Obnovovací token se použitím mění** (starý pak vrací 401). Obnova běží pod zámkem
+  a před ní se relace čte znovu z disku — plugin a služba Kodi sdílejí jeden soubor
+  a kdo přijde s už použitým tokenem, vezme ten nový místo zrušení párování.
+  Zamítnutá obnova (401/403) párování zapomene → `NotPaired`.
+- **Párování titulu přes id.** Hledání je volný fulltext („Matrix" vrátí i Počátek),
+  položky ale nesou `ids.imdb/tmdb/csfd`. Bez IMDb id (české seriály mívají jen ČSFD)
+  rozhoduje název: přesná shoda s rokem ±1, nebo podobnost ≥ 0,85 s přesným rokem —
+  CZtor ukazuje slovenské názvy („Okresný prebor"). Seriály rozdělené po sériích
+  („Zrádci - Série 1") nesou `_split_season`.
+- **Do seznamu streamů jde jen odkaz** `cz:<m|e>:<id titulu/dílu>:<id streamu>`;
+  `playback_url` platí chvíli, takže se bere čerstvá v `resolve()` (seznam streamů
+  s adresami cache 5 min, pak znovu). Adresa hraje bez hlaviček a není vázaná na IP.
+- **Údaje o souboru z API** (`audio_tracks`, `subtitle_tracks`, rozlišení, velikost)
+  jdou do `_media`/`_tracks` ve tvaru `mediainfo.probe()`, takže `_fill_audio` hlavičku
+  nečte a kvalitu určuje skutečné rozlišení, ne název („1080p.UHD.BluRay" není 4K).
+- V enginu přepínač `cz_enabled` (`CONF_CZ_ENABLED`), zdroj běží souběžně s ostatními,
+  `_merge_direct` ho k Luně nepřibaluje. Stav spárování (`sources()["cztor"]`) se zjistí
+  při založení enginu — HA čte `sources()` ze smyčky událostí, kam čtení souboru nepatří.
+- Stremio kopii jádra má, CZtor ale nenabízí: každé nastavení doplňku by potřebovalo
+  vlastní párování a server by musel držet a obnovovat tokeny cizích účtů.
+
+Testy `tests/test_cztor_api.py` (21) nad odpověďmi zachycenými z živého API.
 
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
