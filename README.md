@@ -151,7 +151,7 @@ na testovacím účtu. Bez tokenu vrací všechno 401.
 - Stremio kopii jádra má, CZtor ale nenabízí: každé nastavení doplňku by potřebovalo
   vlastní párování a server by musel držet a obnovovat tokeny cizích účtů.
 
-Testy `tests/test_cztor_api.py` (21) nad odpověďmi zachycenými z živého API.
+Testy `tests/test_cztor_api.py` (20) nad odpověďmi zachycenými z živého API.
 
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
