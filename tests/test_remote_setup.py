@@ -236,6 +236,15 @@ class TestAkce(unittest.TestCase):
         self.assertEqual(out["level"], "ok")
         self.assertFalse(self.server.finished)   # akce formulář neodešle
 
+    def test_odkaz_jen_http(self):
+        import json
+        out = self.server.run_action("najit", "")
+        self.assertEqual(out["link"], {})
+        self.server.actions["odkaz"] = lambda v: {"level": "ok", "text": "x", "link": {"url": "http://a:1/setup", "label": "Otevři"}}
+        self.server.actions["zly"] = lambda v: {"level": "ok", "text": "x", "link": {"url": "javascript:alert(1)"}}
+        self.assertEqual(self.server.run_action("odkaz", "")["link"], {"url": "http://a:1/setup", "label": "Otevři"})
+        self.assertEqual(self.server.run_action("zly", "")["link"], {})
+
     def test_vyjimka_a_neznama_akce(self):
         import json
         for name in ("spadne", "nic"):
