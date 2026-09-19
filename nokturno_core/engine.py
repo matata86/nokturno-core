@@ -1616,6 +1616,12 @@ class Engine:
                 "_media": info,
                 "_direct": True,
             })
+            # rozlišení z API přebíjí název, jako hlavička u ostatních zdrojů v `_fill_audio`:
+            # „1080p.UHD.BluRay" by podle názvu vyšlo jako 4K
+            parse_stream(out[-1])
+            real = quality_from_size(info.get("width") or 0, info.get("height") or 0)
+            if real:
+                out[-1]["quality_rank"] = {"4K": 4, "Full HD": 3, "HD": 2, "SD": 1}[real]
         return out
 
     def _storage_streams(self, meta, video=None, ctype="movie", alt=None, strict=True, failures=None):

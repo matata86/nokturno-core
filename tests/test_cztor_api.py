@@ -256,6 +256,13 @@ class TestVEnginu(unittest.TestCase):
         self.assertGreater(top["size_gb"], 39)
         self.assertTrue(found[0]["label"].endswith(".mkv"))   # HDR už v názvu je, značka se nepřidá
 
+    def test_kvalita_podle_rozliseni_ne_nazvu(self):
+        self.server = FakeServer()
+        self.server.streams["/titles/296/streams"] = [dict(STREAM_4K, id=718, width=1920, height=800, hdr=False,
+                                                           release_name="The.Matrix.1999.1080p.UHD.BluRay.x264.mkv")]
+        found = self.engine()._cztor_streams({"name": "Matrix", "year": 1999, "id": "tt0133093"})
+        self.assertEqual(found[0]["quality_rank"], 3)
+
     def test_dil_serialu(self):
         self.server = FakeServer()
         eng = self.engine()
