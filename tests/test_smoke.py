@@ -1464,6 +1464,37 @@ class TestVykonZdroju(unittest.TestCase):
             self.assertEqual(dotazy, ["a"])
             self.assertEqual([f[0] for f in failures], ["HellSpy"])
 
+    def test_hellspy_po_429_se_dalsi_dotazy_neposilaji_ani_pro_jiny_titul(self):
+        """Stavba katalogu volá HellSpy pro desítky titulů — po první 429 pauza bez sítě."""
+        import urllib.error
+        from unittest import mock
+        from nokturno_core.lib import hellspy_api
+        hellspy_api._blocked_until = 0.0
+        try:
+            api = hellspy_api.HellspyApi()
+            volani = []
+
+            def urlopen(req, timeout=0):
+                volani.append(req.full_url)
+                raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {}, None)
+            with mock.patch.object(hellspy_api.urllib.request, "urlopen", urlopen):
+                with self.assertRaises(hellspy_api.HellspyRateLimited) as prvni:
+                    api.search("Film 1")
+                self.assertFalse(prvni.exception.paused)
+                for i in range(2, 6):
+                    with self.assertRaises(hellspy_api.HellspyRateLimited) as dalsi:
+                        api.search(f"Film {i}")
+                    self.assertTrue(dalsi.exception.paused)
+            self.assertEqual(len(volani), 1)
+            self.assertGreater(hellspy_api.blocked_for(), 0)
+            hellspy_api._blocked_until = 0.0        # pauza vyprší → zase se volá
+            with mock.patch.object(hellspy_api.urllib.request, "urlopen", urlopen):
+                with self.assertRaises(hellspy_api.HellspyRateLimited):
+                    api.search("Film 7")
+            self.assertEqual(len(volani), 2)
+        finally:
+            hellspy_api._blocked_until = 0.0
+
     def test_original_titles_jednou_za_vypis(self):
         with tempfile.TemporaryDirectory() as tmp:
             engine = Engine({"streamuj_username": "u", "streamuj_password": "p"}, tmp)
