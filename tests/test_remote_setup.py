@@ -194,3 +194,55 @@ class TestServer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAkce(unittest.TestCase):
+    SCHEMA = [{"id": "luna", "label": "Luna", "fields": [
+        {"type": "info", "label": "Návod", "help": "Krok 1\nKrok 2"},
+        {"id": "luna_url", "type": "text", "label": "Adresa"},
+        {"id": "heslo", "type": "password", "label": "Heslo"},
+        {"type": "action", "action": "najit", "label": "Najít", "inputs": ["luna_url"]},
+    ]}]
+
+    def _post(self, server, path, body=""):
+        req = urllib.request.Request(f"http://127.0.0.1:{server.port}/s/{server.token}{path}",
+                                     data=body.encode(), method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, resp.read().decode()
+
+    def setUp(self):
+        self.seen = []
+
+        def najit(values):
+            self.seen.append(values)
+            return {"level": "ok", "text": "Nalezeno", "set": {"luna_url": "http://x:7126", "heslo": "tajne",
+                                                                 "neexistuje": "a"}}
+        self.server = remote_setup.SetupServer(self.SCHEMA, {"luna_url": "", "heslo": "s"},
+                                               actions={"najit": najit, "spadne": lambda v: 1 / 0})
+        self.server.start(host="127.0.0.1")
+        self.addCleanup(self.server.stop)
+
+    def test_stranka_ma_navod_a_tlacitko(self):
+        page = self.server.render()
+        self.assertIn("Krok 1", page)
+        self.assertIn('data-act="najit"', page)
+
+    def test_akce_dostane_jen_vyjmenovana_pole_a_vrati_jen_textova(self):
+        import json
+        status, body = self._post(self.server, "/act/najit", "luna_url=abc&heslo=x")
+        out = json.loads(body)
+        self.assertEqual(self.seen, [{"luna_url": "abc"}])
+        self.assertEqual(out["set"], {"luna_url": "http://x:7126"})   # heslo ani neznámé pole ne
+        self.assertEqual(out["level"], "ok")
+        self.assertFalse(self.server.finished)   # akce formulář neodešle
+
+    def test_vyjimka_a_neznama_akce(self):
+        import json
+        for name in ("spadne", "nic"):
+            self.assertEqual(json.loads(self._post(self.server, "/act/" + name)[1])["level"], "fail")
+
+    def test_akce_bez_klice_je_404(self):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.server.port}/s/spatny/act/najit", data=b"", method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(ctx.exception.code, 404)
