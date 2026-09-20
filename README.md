@@ -338,10 +338,8 @@ z téhož kódu vyjdou jinde jiné klíče a blob jednoho účelu nejde podstrč
 druhému. Délka kódu je parametr: synchronizace 16 znaků (dlouhodobá skupina),
 přenos 8 (žije čtvrthodinu).
 
-> **Pro větev `sync`:** `syncbox.py` má dodnes vlastní kopii téhle kryptografie.
-> Při nejbližším rebase ji smaž a importuj `sealbox` (`keys_for(code,
-> b"nokturno-sync-v1", 16)`, atribut `ident` místo `group_id`) — chování je
-> shodné, ověřeno testy.
+`syncbox.py` si kryptografii nedrží — importuje `sealbox`
+(`keys_for(code, b"nokturno-sync-v1", 16)`, adresa skupiny je atribut `ident`).
 
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
@@ -351,12 +349,14 @@ bez HA — střed dělá dashboard, ale **jen jako slepý relay**: ukládá nepr
 bloby, které nedokáže přečíst. Zadání uživatele (2026-09-17): anonymní, a nastavení
 včetně účtů se synchronizuje taky, ale musí jít nezvolit.
 
-> **Stav k 2026-09-17:** klient (`lib/syncbox.py`, 27 testů) i server
-> (`Dashboard/backend/syncrelay.py`, 19 testů) hotové a ověřené proti sobě —
-> stav dojde na druhé zařízení a v uloženém blobu se nedá najít název titulu ani
-> jeho id. **Chybí UI v doplňku** (párování, kategorie nastavení, napojení na
-> službu) a **okruhy `settings`/`accounts`** — ty jsou zatím jen návrh níž.
-> Vyvíjí se ve větvi `sync` (`Nokturno/sync-dev/`), nevydává se.
+> **Stav k 2026-09-20: modul hotový.** Klient (`lib/syncbox.py`), okruhy
+> (`lib/sync.py`), nastavení a účty (`lib/setsync.py`) i server
+> (`Dashboard/backend/syncrelay.py`) jsou hotové a ověřené proti sobě naživo:
+> stav dojde na druhé zařízení a v uloženém blobu se nedá najít název titulu,
+> jeho id, uživatelské jméno ani heslo. V doplňku je kategorie **Synchronizace**
+> (volba střediska, párování kódem, okruhy) a služba jede podle `sync_mode`;
+> v integraci pro HA je pole **Kód skupiny z Kodi**. Vyvíjí se ve větvi `sync`
+> (`Nokturno/sync-dev/`) pod verzí `9.99.0~syncN`.
 
 **Protokol slévání se nemění.** `collect_changes()` / `apply_changes()` zůstávají
 jak jsou — slévání je last-write-wins podle `ts`, tedy komutativní, takže
@@ -411,11 +411,42 @@ drží jeden přepisovaný řádek na zařízení. Nová instalace tím dostane 
 odpadá fronta i úklid delt a ztracený blob nic nerozbije. Nahrává se jen při
 změně otisku (klient si pamatuje hash posledního odeslaného blobu).
 
-**Pozor na `items`** — snímky titulů jsou v celém stavu dominantní (2000 položek
-s popisem a obrázky je řádově stovky kB i po gzipu). Do blobu patří jen snímky
-k položkám v Mém seznamu a rozkoukaným, zbytek si příjemce dohledá sám —
-`recover_snapshot()` (hubený snímek, od Kodi `5.2.7~beta11`) na to už existuje.
-Reálnou velikost je potřeba změřit na skutečném profilu, ne odhadovat.
+**Pozor na `items`** — snímky titulů jsou v celém stavu dominantní. Změřeno na
+skutečném profilu (průměrný snímek 1,3 kB JSON): se snímky ke všem zhlédnutým
+titulům má 500 titulů blob **177 kB**, tedy přes `MAX_BLOB` (128 kB), a 2000
+titulů 700 kB. Synchronizace by tím od pár set zhlédnutých titulů přestala
+fungovat úplně, ne zpomalit.
+
+Do blobu proto jdou jen snímky, bez kterých se položka nevykreslí — **Můj seznam
+a rozkoukané** (`sync._snapshots`, strop `SNAPSHOT_MAX` = 300 od nejčerstvějšího).
+Dokoukaný titul si příjemce dohledá sám, `recover_snapshot()` (hubený snímek, od
+Kodi `5.2.7~beta11`) na to už existuje. Plný profil (5000 zhlédnutých, 250
+rozkoukaných) je pak **93 kB**. Druhá pojistka je v `syncbox.sync_once`: kdyby
+blob přesto přerostl, půlí se počet snímků, dokud se nevejde — kolo skončí bez
+části obrázků, ne chybou.
+
+### Kudy která domácnost chodí
+
+Středisko se volí v nastavení (`sync_mode`) a jsou tři možnosti:
+
+| Volba | Kdo je střed | Pro koho |
+|-------|--------------|----------|
+| Home Assistant | integrace Nokturno (`POST /api/nokturno/sync`) | kdo HA má a všechna Kodi jsou doma |
+| Dashboard Nokturna | slepý relay (`POST /sync`) | kdo HA nemá |
+| HA i dashboard | obojí naráz, HA první | kdo HA má, ale některé Kodi je mimo domácí síť |
+
+**Kodi mimo domácí síť** (telefon, chata) na adresu HA nedosáhne, na relay ano.
+Proto do skupiny smí chodit i **samo HA** — v integraci je pole *Kód skupiny
+z Kodi* a jednou za pět minut si s relayem vymění totéž, co s Kodi doma
+(`syncbox.sync_once(..., stamp=True)`). Topologie je pak hvězda přes relay a
+nezáleží na tom, jestli je zrovna některé Kodi zapnuté.
+
+`stamp=True` tu není detail: přijatému záznamu se vyrazí **čas příjmu** (`rts`),
+protože filtr `since` v HA kole jde podle příjmu, ne podle vzniku. Bez toho by
+změna, která ležela v relayi pár hodin, do Kodi přes HA už nikdy nedošla. Razit
+`rts` smí jen střed — když dělá most některé Kodi v režimu „obojí", nemá jinou
+možnost než po příjmu z relaye zahodit svoje `since` (`sync.reset_since`) a
+poslat do HA celý stav.
 
 ### Okruhy (co se synchronizuje)
 
@@ -457,8 +488,12 @@ takového seznamu by sdílení nastavení rozbilo každý box, který má něco 
 ### Sloučení stavu — na co si dát pozor
 
 - **Rozkoukanost je konfliktní.** Dva lidé na dvou TV u téhož seriálu si LWW
-  navzájem přepíšou pozici. Minimum: dokoukaný titul se nikdy nevrátí na
-  rozkoukaný. Ke zvážení „vyhrává větší pozice" místo „vyhrává novější zápis".
+  navzájem přepíšou pozici — to je v pořádku, poslední pozice je ta, kde se
+  opravdu skončilo. Ztratit se ale nesmí příznak „tohle už jsem viděl", takže
+  `playcount` se slévá **maximem** (`sync._keep_playcount`), ne podle času:
+  kdo film dokoukal na jedné TV a na druhé ho pustil znovu, o označení nepřijde.
+  Varianta „vyhrává větší pozice" se nepoužila — vracela by uživatele zpátky
+  u titulu, který dokoukal na jiném zařízení.
 - **Rozbité hodiny.** Android box po výpadku napíše `ts` z budoucnosti a LWW ten
   záznam zafixuje napořád. Relay čas nevidí (blob je šifrovaný), takže clamp musí
   dělat příjemce při `apply_changes` — odmítnout `ts` výrazně nad vlastním časem.
