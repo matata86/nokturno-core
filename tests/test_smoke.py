@@ -293,22 +293,9 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             luna = {"url": "http://luna:7126/stream/x", "label": "(WS) 4K", "detail": "5.0 GB",
                     "source": "main", "_tracks": [{"lang": "EN", "channels": "5.1"}], "_ws_url": "ws:abc"}
             engine._fill_audio([luna])
-            self.assertEqual(cteno, ["ws:abc"], "čte se přibalený odkaz WebShare, ne http Luny")
+            self.assertEqual(cteno, ["http://luna:7126/stream/x"], "čte se Lunin vlastní odkaz, ne odhadem spárovaný soubor")
             self.assertEqual(set(luna["subs"]), {"CZ", "EN", "FR"})
             self.assertEqual(luna["_media"]["width"], 3840)
-
-    def test_lunin_radek_nedostane_hlavicku_cizího_souboru(self):
-        """Spárování Luny s WebShare je odhad podle velikosti; soubor s jiným jazykem zvuku
-        (dva 5GB soubory téhož dílu) by přinesl cizí titulky, tak se nepoužije."""
-        info = {"width": 3840, "height": 1920, "audio": [{"lang": "", "channels": "5.1"}], "subs": ["CZ"]}
-        with tempfile.TemporaryDirectory() as tmp:
-            engine = Engine({}, tmp)
-            engine._media_from_file = lambda url: info
-            luna = {"url": "http://luna:7126/x", "label": "(WS) 4K", "detail": "5.0 GB", "source": "main",
-                    "langs": ["EN"], "_ws_url": "ws:abc"}
-            engine._fill_audio([luna])
-            self.assertFalse(luna.get("subs"))
-            self.assertNotIn("_media", luna)
 
     def test_volby_kodi_audio_probe_fresh_a_uvolneny_filtr(self):
         """Volby, které si doplněk pro Kodi bere z nastavení: limit čtení hlaviček,
