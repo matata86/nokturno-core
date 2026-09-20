@@ -23,8 +23,8 @@ sys.path.insert(0, str(ROOT))
 from nokturno_core.lib import syncbox  # noqa: E402
 from nokturno_core.lib.store import Store  # noqa: E402
 from nokturno_core.lib.syncbox import (  # noqa: E402
-    CODE_LEN, Keys, Relay, SyncError, filter_circles, format_code, new_code,
-    normalize_code, sanitize, seal, sync_once, unseal, valid_code,
+    CODE_LEN, Relay, SyncError, filter_circles, format_code, new_code,
+    keys_for, normalize_code, sanitize, seal, sync_once, unseal, valid_code,
 )
 
 KOD = "NKT-8G4M-2QX7-VB9K-TRWP"
@@ -103,29 +103,29 @@ class TestKod(unittest.TestCase):
         for spatny in ("", "NKT-1234", "NKT-8G4M-2QX7-VB9K-TRW", KOD + "X", "NKT-8G4M-2QX7-VB9K-TRW!"):
             self.assertFalse(valid_code(spatny), spatny)
         with self.assertRaises(SyncError):
-            Keys("moc krátký")
+            keys_for("moc krátký")
 
 
 class TestKlice(unittest.TestCase):
     def test_stejny_kod_stejne_klice(self):
-        a, b = Keys(KOD), Keys(normalize_code(KOD).lower())
-        self.assertEqual(a.group_id, b.group_id)
+        a, b = keys_for(KOD), keys_for(normalize_code(KOD).lower())
+        self.assertEqual(a.ident, b.ident)
         self.assertEqual(a.enc, b.enc)
 
     def test_jiny_kod_jina_skupina(self):
-        self.assertNotEqual(Keys(KOD).group_id, Keys(new_code()).group_id)
+        self.assertNotEqual(keys_for(KOD).ident, keys_for(new_code()).ident)
 
-    def test_group_id_neprozradi_kod_ani_klice(self):
-        k = Keys(KOD)
-        self.assertEqual(len(k.group_id), 32)
-        self.assertNotIn(normalize_code(KOD), k.group_id.upper())
-        # z group_id se nedá odvodit šifrovací klíč
-        self.assertNotIn(k.group_id.encode(), k.enc)
+    def test_ident_neprozradi_kod_ani_klice(self):
+        k = keys_for(KOD)
+        self.assertEqual(len(k.ident), 32)
+        self.assertNotIn(normalize_code(KOD), k.ident.upper())
+        # z ident se nedá odvodit šifrovací klíč
+        self.assertNotIn(k.ident.encode(), k.enc)
 
 
 class TestObalka(unittest.TestCase):
     def setUp(self):
-        self.keys = Keys(KOD)
+        self.keys = keys_for(KOD)
         self.data = {"watched": {"tt1": {"ts": 10, "playcount": 1}}, "device": "Obývák"}
 
     def test_zabalit_a_rozbalit(self):
@@ -140,7 +140,7 @@ class TestObalka(unittest.TestCase):
         self.assertNotEqual(seal(self.keys, self.data), seal(self.keys, self.data))
 
     def test_cizi_klic_neotevre(self):
-        self.assertIsNone(unseal(Keys(new_code()), seal(self.keys, self.data)))
+        self.assertIsNone(unseal(keys_for(new_code()), seal(self.keys, self.data)))
 
     def test_zmeneny_blob_neprojde(self):
         blob = bytearray(seal(self.keys, self.data))
@@ -198,7 +198,7 @@ class TestVymena(unittest.TestCase):
         self.patch = mock.patch("urllib.request.urlopen", side_effect=self.relay.urlopen)
         self.patch.start()
         self.addCleanup(self.patch.stop)
-        Relay(Keys(KOD), "master").open_group()      # master otevře připojení
+        Relay(keys_for(KOD), "master").open_group()      # master otevře připojení
 
     def sync(self, st, **kw):
         return sync_once(st, KOD, **kw)
@@ -260,7 +260,7 @@ class TestVymena(unittest.TestCase):
         self.obyvak.set_watched("tt1", True)
         self.sync(self.obyvak)
         # blob od někoho s jiným kódem v téže skupině (server je nerozliší)
-        self.relay.blobs["vetrelec"] = (99, seal(Keys(new_code()), {"watched": {"tt9": {"ts": 1}}}))
+        self.relay.blobs["vetrelec"] = (99, seal(keys_for(new_code()), {"watched": {"tt9": {"ts": 1}}}))
         ok, _, pulled, why = self.sync(self.loznice)
         self.assertTrue(ok, why)
         self.assertFalse(self.loznice.watched("tt9"))
@@ -268,7 +268,7 @@ class TestVymena(unittest.TestCase):
     def test_server_vidi_jen_group_id(self):
         self.obyvak.set_watched("Pelíšky (1999)", True)
         self.sync(self.obyvak)
-        self.assertEqual(self.relay.seen_groups, {Keys(KOD).group_id})
+        self.assertEqual(self.relay.seen_groups, {keys_for(KOD).ident})
         self.assertNotIn(normalize_code(KOD), " ".join(self.relay.seen_groups).upper())
         blob = list(self.relay.blobs.values())[0][1]
         self.assertNotIn("Pelíšky".encode("utf-8"), blob)
