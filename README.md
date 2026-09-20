@@ -55,6 +55,7 @@ nokturno_core/
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
 │   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
+│   ├── foryou.py                                   „Pro tebe“: slití doporučení k naposledy zhlédnutým, losování žánru
 │   ├── sync.py syncbox.py                          synchronizace přes HA / přes slepý relay
 │   ├── sealbox.py                                  kód z obrazovky → klíče, zapečetění (sdílí syncbox i transfer)
 │   ├── transfer.py                                 přenos nastavení do dalšího zařízení
@@ -201,6 +202,30 @@ token.
 jiná větev rodiny) a `blocked` (`DENY`, kdyby přišel podvržený přenos). Klient
 podle toho ukáže, co se stane, ještě než na to sáhne, a před zápisem si odloží
 kopii `settings.xml`.
+
+## „Pro tebe“ (`lib/foryou.py`, 2026-09-20)
+
+Doporučení k tomu, co uživatel dokoukal naposledy. Modul sám nikam nechodí —
+dostane hotovou `similar_fn` (`TmdbApi.similar`, bez klíče TMDB
+`DashApi.similar`) a jen z ní skládá seznam, takže jde testovat bez sítě.
+
+**Počítá se u klienta.** Historie zhlédnutí je jen v profilu doplňku (`Store`,
+klíč `watched`); server ji nemá a mít nemá. Nový veřejný endpoint by za to
+zaplatil cizími účty na serveru, a přesně tuhle cestu odmítla 6.2.2 u jazykových
+katalogů.
+
+- `seed_ids(rows, ctype)` — vzory z `Store.recently_watched()`. Epizody se slijí
+  do jednoho seriálu, typ se pozná podle sezóny a dílu v klíči, id bez IMDb
+  (soubory z úložiště, vlastní id Sosáče) vypadnou.
+- `recommend(seeds, similar_fn, skip=…)` — sloučení a řazení: napřed tituly,
+  které doporučuje víc vzorů, pak podle nejlepšího pořadí u některého z nich.
+  Každá položka nese `_because` (id vzoru), ze kterého si klient udělá
+  „Protože jsi viděl …“ podle vlastního snímku titulu, tedy bez dotazu navíc.
+- `genre_counts` / `pick_genre` — vážené losování žánru pro „Náhodný film“.
+
+Cena na TMDB (studeně, pět vzorů po dvanácti doporučeních): 2–3 dotazy na vzor
+s cache na 7 dní, k tomu detail na každý výsledný titul — ten má ale cache 30 dní
+a sdílí ji se všemi ostatními katalogy. Detail v `Kodi/dokumentace.md`.
 
 ## Zapečetění kódem (`lib/sealbox.py`, 2026-09-20)
 
