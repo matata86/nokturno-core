@@ -278,6 +278,26 @@ class TestVymena(unittest.TestCase):
         self.sync(self.loznice)
         self.assertEqual(len(self.relay.blobs), 2)
 
+    def test_zarizeni_si_drzi_stejne_id_napric_koly(self):
+        """Id zařízení leží v témže souboru jako stav kola. Kdyby ho závěrečné
+        uložení přepsalo, vyrobí si zařízení po každém kole novou identitu —
+        v relayi přibývá osiřelý blob a skupina se zaplní na MAX_DEVICES."""
+        self.obyvak.set_watched("tt1", True)
+        self.sync(self.obyvak)
+        prvni = self.obyvak.reload("syncbox", {}).get("device")
+        self.assertTrue(prvni)
+
+        self.obyvak.set_watched("tt2", True)
+        self.sync(self.obyvak)
+        self.assertEqual(self.obyvak.reload("syncbox", {}).get("device"), prvni)
+        self.assertEqual(list(self.relay.blobs), [prvni], "přibyl blob pod novým id")
+
+    def test_odhlaseni_po_kole_smaze_vlastni_blob(self):
+        self.obyvak.set_watched("tt1", True)
+        self.sync(self.obyvak)
+        Relay(keys_for(KOD), syncbox.device_id(self.obyvak)).forget()
+        self.assertEqual(self.relay.blobs, {})
+
     def test_spatny_kod_hlasi_chybu_a_nespadne(self):
         ok, _, _, why = sync_once(self.obyvak, "NKT-krátký")
         self.assertFalse(ok)
