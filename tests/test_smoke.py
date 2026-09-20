@@ -755,6 +755,44 @@ class TestAudit20260919(unittest.TestCase):
             self.assertEqual([l for l, _e in failures], ["HellSpy"])
             self.assertIn("neodpověděl", str(failures[0][1]))
 
+    def test_druhe_kolo_nedostane_novy_strop(self):
+        """`raw_streams()` volá `kolo()` podruhé, když hlavní zdroj nic nenašel a český
+        název se liší. Rozpočet `SOURCE_DEADLINE` je společný pro obě kola — jinak se
+        stropy sečtou a hledání trvá dvojnásobek (na produkci naměřeno až 31,4 s)."""
+        from nokturno_core import engine as mod
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            engine._webshare_streams = lambda *a, **k: time.sleep(5) or []
+            engine._with_local_title = lambda ctype, base_id, meta: dict(meta, name="Český název")
+            puvodni = (mod.SOURCE_DEADLINE, mod.MIN_ROUND_DEADLINE)
+            mod.SOURCE_DEADLINE, mod.MIN_ROUND_DEADLINE = 1.0, 0.2
+            try:
+                t = time.monotonic()
+                engine.raw_streams("movie", "tt1", probe_audio=False)
+                trvalo = time.monotonic() - t
+            finally:
+                mod.SOURCE_DEADLINE, mod.MIN_ROUND_DEADLINE = puvodni
+            self.assertTrue(engine.last_timings.get("znovu česky"), "druhé kolo se musí spustit")
+            self.assertLess(trvalo, 1.7, "obě kola dohromady nesmí přesáhnout rozpočet plus minimum")
+
+    def test_prvni_kolo_ma_cely_rozpocet(self):
+        """Zkrácení platí jen na další kola — první nesmí přijít o čas kvůli tomu,
+        co běželo před ním."""
+        from nokturno_core import engine as mod
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            engine._hellspy_streams = lambda *a, **k: time.sleep(0.6) or [
+                {"url": "hs:1:a", "label": "Film.2020.720p.mkv", "detail": "1 GB", "source": "hs", "_direct": True}]
+            puvodni = mod.SOURCE_DEADLINE
+            mod.SOURCE_DEADLINE = 1.0
+            try:
+                failures = []
+                found = engine.raw_streams("movie", "tt1", probe_audio=False, failures=failures)
+            finally:
+                mod.SOURCE_DEADLINE = puvodni
+            self.assertEqual(failures, [], "pomalejší zdroj se do rozpočtu vejde")
+            self.assertEqual(len(found), 2)
+
     def test_hs_odkaz_s_nesmyslem_se_odmitne(self):
         with tempfile.TemporaryDirectory() as tmp:
             engine = Engine({}, tmp)
