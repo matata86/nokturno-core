@@ -25,11 +25,14 @@ CORE = ROOT / "nokturno_core"
 
 # from .modul import …  →  from modul import …   (jen uvnitř balíčku, ne stdlib);
 # engine.py má knihovnu o úroveň níž: from .lib.modul import … → from modul import …
-RELATIVE_IMPORT = re.compile(r"^from \.(?:lib\.)?(\w)", re.M)
+# Odsazení se drží: relativní import uvnitř funkce (líné načtení) se jinak nezploští
+# a doplněk pro Kodi spadne až za běhu na „attempted relative import with no known
+# parent package" — projde přitom i testy, které jádro importují jako balíček.
+RELATIVE_IMPORT = re.compile(r"^([ \t]*)from \.(?:lib\.)?(\w)", re.M)
 # celý modul místo jmen z něj: from .lib import modul as x → import modul as x.
 # Musí jít napřed — `RELATIVE_IMPORT` by z toho udělal `from lib import …` a balíček
 # `lib` v ploché struktuře doplňku pro Kodi neexistuje.
-PACKAGE_IMPORT = re.compile(r"^from \.lib import ", re.M)
+PACKAGE_IMPORT = re.compile(r"^([ \t]*)from \.lib import ", re.M)
 
 
 class Target:
@@ -72,8 +75,8 @@ TARGETS = [
 def render(source: Path, flatten: bool) -> str:
     text = source.read_text(encoding="utf-8")
     if flatten:
-        text = PACKAGE_IMPORT.sub("import ", text)
-        text = RELATIVE_IMPORT.sub(r"from \1", text)
+        text = PACKAGE_IMPORT.sub(r"\1import ", text)
+        text = RELATIVE_IMPORT.sub(r"\1from \2", text)
     return text
 
 
