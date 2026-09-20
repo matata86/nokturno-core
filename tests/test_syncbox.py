@@ -366,3 +366,39 @@ class TestHomeAssistantJakoClen(unittest.TestCase):
         posledni_vymena = int(time.time()) - 500
         sync_once(self.ha, KOD, name="Kodi")       # Kodi `stamp` nepoužívá
         self.assertNotIn("tt901", collect_changes(self.ha, posledni_vymena)["watched"])
+
+
+class TestVelkyStav(unittest.TestCase):
+    """Blob nad `MAX_BLOB` nesmí kolo zastavit — ubere se ze snímků, ne ze stavu."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.store = store(self.tmp, "velky")
+        self.relay = FakeRelay()
+        self.patch = mock.patch("urllib.request.urlopen", side_effect=self.relay.urlopen)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        Relay(keys_for(KOD), "master").open_group()
+
+    def test_prilis_velke_snimky_se_useknou(self):
+        ted = int(time.time())
+        # náhodný popis: gzip ho nestlačí, takže se `MAX_BLOB` opravdu překročí
+        self.store.save("watched", {"tt%d" % i: {"resume": 10, "total": 100, "ts": ted}
+                                    for i in range(200)})
+        self.store.save("items", {
+            "tt%d" % i: {"title": "Film %d" % i,
+                         "plot": base64.b64encode(os.urandom(3000)).decode()}
+            for i in range(200)})
+        cely = seal(keys_for(KOD), collect_changes(self.store, 0))
+        self.assertGreater(len(cely), syncbox.MAX_BLOB)   # bez pojistky by kolo skončilo chybou
+        ok, pushed, _, why = sync_once(self.store, KOD, name="Velký")
+        self.assertTrue(ok, why)
+        self.assertGreater(pushed, 0)
+
+        # stav dojde na druhé zařízení, i když se snímky cestou zkrátily
+        druhy = store(self.tmp, "druhy")
+        ok, _, pulled, why = sync_once(druhy, KOD, name="Druhý")
+        self.assertTrue(ok, why)
+        self.assertGreaterEqual(pulled, 200)
+        self.assertAlmostEqual(druhy.resume("tt7")[0], 10, places=0)

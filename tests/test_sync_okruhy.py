@@ -35,7 +35,8 @@ class TestOkruhyHA(unittest.TestCase):
         self.addCleanup(self.dir.cleanup)
         self.store = Store(self.dir.name)
         ted = int(time.time())
-        self.store.save("watched", {"tt1": {"resume": 0, "total": 0, "ts": ted}})
+        # rozkoukaný: snímek k němu jde do výměny (dokoukaný si příjemce dohledá sám)
+        self.store.save("watched", {"tt1": {"resume": 100, "total": 1000, "ts": ted}})
         self.store.save("favlog", {"tt2": {"on": True, "ts": ted}})
         self.store.save("histlog", {"matrix": {"ts": ted}})
         self.store.save("items", {"tt1": {"title": "Film"}, "tt2": {"title": "Jiný"}})
@@ -107,3 +108,65 @@ class TestResetSince(unittest.TestCase):
         self.store.save(sync.STATE, {"since": 0, "last_ok": 5})
         sync.reset_since(self.store)
         self.assertEqual(self.store.reload(sync.STATE, {})["last_ok"], 5)
+
+
+class TestSnimkyVeVymene(unittest.TestCase):
+    """Snímky titulů jsou jediná část stavu, která roste bez omezení.
+
+    Bez stropu má profil s pár sty zhlédnutými tituly blob přes `syncbox.MAX_BLOB`
+    (měřeno: 500 titulů = 177 kB proti limitu 128 kB) a synchronizace přestane
+    fungovat úplně. Proto jdou do výměny jen snímky, bez kterých se položka
+    nevykreslí — Můj seznam a rozkoukané.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        self.store = Store(self.tmp)
+
+    def test_dokoukany_titul_snimek_neveze(self):
+        ted = int(time.time())
+        self.store.save("watched", {"hotovo": {"resume": 0, "total": 100, "ts": ted},
+                                    "rozkoukane": {"resume": 50, "total": 100, "ts": ted}})
+        self.store.save("favlog", {"seznam": {"on": True, "ts": ted},
+                                   "odebrane": {"on": False, "ts": ted}})
+        self.store.save("items", {k: {"title": k} for k in
+                                  ("hotovo", "rozkoukane", "seznam", "odebrane")})
+        items = sync.collect_changes(self.store, 0)["items"]
+        self.assertEqual(set(items), {"rozkoukane", "seznam"})
+
+    def test_strop_bere_nejcerstvejsi(self):
+        ted = int(time.time())
+        pocet = sync.SNAPSHOT_MAX + 50
+        self.store.save("watched", {"tt%d" % i: {"resume": 10, "total": 100, "ts": ted - i}
+                                    for i in range(pocet)})
+        self.store.save("items", {"tt%d" % i: {"title": str(i)} for i in range(pocet)})
+        items = sync.collect_changes(self.store, 0)["items"]
+        self.assertEqual(len(items), sync.SNAPSHOT_MAX)
+        self.assertIn("tt0", items)                      # nejčerstvější
+        self.assertNotIn("tt%d" % (pocet - 1), items)    # nejstarší
+
+
+class TestSlevaniZhlednuti(unittest.TestCase):
+    """„Tohle už jsem viděl" se slitím dvou zařízení ztratit nesmí."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        self.store = Store(self.tmp)
+
+    def test_novejsi_rozkoukanost_neprebije_dokoukano(self):
+        ted = int(time.time())
+        self.store.save("watched", {"tt1": {"resume": 0, "total": 100,
+                                            "playcount": 1, "ts": ted - 100}})
+        sync.apply_changes(self.store, {"watched": {
+            "tt1": {"resume": 30, "total": 100, "ts": ted}}})
+        rec = self.store.reload("watched", {})["tt1"]
+        self.assertEqual(rec["playcount"], 1)       # zhlédnutí zůstalo
+        self.assertEqual(rec["resume"], 30)         # pozice je z novějšího záznamu
+
+    def test_vyssi_pocet_zhlednuti_z_druhe_strany_vyhraje(self):
+        ted = int(time.time())
+        self.store.save("watched", {"tt1": {"resume": 0, "playcount": 1, "ts": ted - 100}})
+        sync.apply_changes(self.store, {"watched": {"tt1": {"resume": 0, "playcount": 3, "ts": ted}}})
+        self.assertEqual(self.store.reload("watched", {})["tt1"]["playcount"], 3)
