@@ -296,6 +296,11 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             self.assertEqual(cteno, ["http://luna:7126/stream/x"], "čte se Lunin vlastní odkaz, ne odhadem spárovaný soubor")
             self.assertEqual(set(luna["subs"]), {"CZ", "EN", "FR"})
             self.assertEqual(luna["_media"]["width"], 3840)
+            info["audio"] = [{"lang": "", "channels": "5.1", "codec": "EAC3"}]
+            luna2 = dict(luna, _tracks=[{"lang": "EN", "channels": "5.1"}], _media=None)
+            luna2.pop("_media")
+            engine._fill_audio([luna2])
+            self.assertEqual(luna2["_tracks"][0]["lang"], "EN", "jazyk od Luny se souborem bez jazyka nepřepíše")
 
     def test_volby_kodi_audio_probe_fresh_a_uvolneny_filtr(self):
         """Volby, které si doplněk pro Kodi bere z nastavení: limit čtení hlaviček,
