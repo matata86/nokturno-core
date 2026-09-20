@@ -56,6 +56,8 @@ nokturno_core/
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
 │   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
 │   ├── sync.py syncbox.py                          synchronizace přes HA / přes slepý relay
+│   ├── sealbox.py                                  kód z obrazovky → klíče, zapečetění (sdílí syncbox i transfer)
+│   ├── transfer.py                                 přenos nastavení do dalšího zařízení
 │   └── store.py stats.py trakt_api.py enrich.py sosac_api.py
 └── ...
 ```
@@ -152,6 +154,71 @@ na testovacím účtu. Bez tokenu vrací všechno 401.
   vlastní párování a server by musel držet a obnovovat tokeny cizích účtů.
 
 Testy `tests/test_cztor_api.py` (20) nad odpověďmi zachycenými z živého API.
+
+## Přenos nastavení do dalšího zařízení (`lib/transfer.py`, 2026-09-20)
+
+Zadání uživatele: „kdo má čtyři Kodi, nemá je nastavovat čtyřikrát." První
+zařízení zabalí svoje nastavení, zapečetí ho kódem a odloží na dashboard; druhé
+kód opíše z obrazovky a nastavení si vyzvedne.
+
+    NKT-4F7K-2B9Q      8 znaků Crockford Base32, 40 bitů
+
+Server je slepý stejně jako u synchronizace — `ident` je z kódu odvozené
+jednosměrně a blob bez kódu nikdo nerozluští. Přenos žije 15 minut a **jedno
+vyzvednutí ho smaže**. Krátký kód stačí právě proto, že hádat se dá jen přes
+server, a ten má strop pokusů na adresu (`Dashboard/backend/transfer.py`).
+Stejný blob jde místo na server uložit do souboru — formát je týž, kód je pořád
+potřeba.
+
+### Co se přenáší
+
+Seznam se **neudržuje ručně**. Bere se ze schématu formuláře „Nastavit
+z mobilu" (`remote_setup.py`), které Kodi staví přímo ze `settings.xml`, takže
+nové nastavení se přenáší samo. Odečte se `DENY`:
+
+| Klíč | Proč ne |
+|------|---------|
+| `download_dir` | cesta, která na druhém stroji nemusí existovat |
+| `sync_enabled`, `sync_url`, `sync_key` | synchronizace má vlastní párování; sdílený klíč by ze dvou zařízení udělal jedno |
+
+Mimo schéma (a tedy mimo přenos) zůstává všechno z profilu: `install_id` —
+jinak by se dvě zařízení slila v statistikách i v hlášeních o pádech — tokeny,
+cache, oblíbené a rozkoukanost.
+
+### Tokeny se nekopírují, ale nezapomínají
+
+CZtor mění obnovovací token při každém použití, takže kopie na druhé zařízení
+by **odhlásila to původní**; token Traktu je vázaný na zařízení. Přenos proto
+nese jen `flags` („tady byl zapnutý CZtor"), a cílové zařízení po importu rovnou
+nabídne párování PINem, respektive přihlášení k Traktu. Sdílené heslo WebShare
+naproti tomu jde přes přenos celé — je to prostý přístup k účtu, ne rotující
+token.
+
+### Plán místo tichého přepisu
+
+`plan(payload, current, known)` rozdělí přenos na `changes` (zapíše se), `same`
+(už sedí), `unknown` (tohle zařízení ten klíč nezná — starší verze doplňku,
+jiná větev rodiny) a `blocked` (`DENY`, kdyby přišel podvržený přenos). Klient
+podle toho ukáže, co se stane, ještě než na to sáhne, a před zápisem si odloží
+kopii `settings.xml`.
+
+## Zapečetění kódem (`lib/sealbox.py`, 2026-09-20)
+
+Kryptografie, kterou dřív nesl jen `syncbox.py`, stojí od přenosu nastavení
+zvlášť — obojí ji potřebuje beze zbytku stejnou. Odvození klíčů z kódu
+(PBKDF2 → `ident`/`enc`/`mac`), Crockford Base32 bez `I`, `L`, `O` a `U`,
+`seal`/`unseal` s gzipem a encrypt-then-MAC jen ze stdlib. Podrobnosti níž
+v oddílu o synchronizaci — popisují týž mechanismus.
+
+Každý účel má **vlastní sůl** (`nokturno-sync-v1`, `nokturno-transfer-v1`), takže
+z téhož kódu vyjdou jinde jiné klíče a blob jednoho účelu nejde podstrčit
+druhému. Délka kódu je parametr: synchronizace 16 znaků (dlouhodobá skupina),
+přenos 8 (žije čtvrthodinu).
+
+> **Pro větev `sync`:** `syncbox.py` má dodnes vlastní kopii téhle kryptografie.
+> Při nejbližším rebase ji smaž a importuj `sealbox` (`keys_for(code,
+> b"nokturno-sync-v1", 16)`, atribut `ident` místo `group_id`) — chování je
+> shodné, ověřeno testy.
 
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
