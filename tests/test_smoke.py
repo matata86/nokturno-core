@@ -470,6 +470,98 @@ class TestStoreSdilenyViceProcesy(unittest.TestCase):
 
 
 
+def _zapisovac(tmp, znacka, kolik):
+    """Samostatný proces: připíše `kolik` klíčů do watched.json. Běží v testu níž."""
+    from nokturno_core.lib.store import Store
+    store = Store(tmp)
+    for i in range(kolik):
+        store.set_resume(f"{znacka}{i}", 10 + i, 1000)
+        time.sleep(0.002)
+
+
+class TestStoreZamekMeziProcesy(unittest.TestCase):
+    """Načti–uprav–ulož nad sdíleným JSON (audit 2026-09-19, nález 27).
+
+    `os.replace` je atomický, celý cyklus ne: prohrávající zápis tiše zahodil, co mezitím
+    uložil jiný proces. Kodi je na ty soubory víc procesů najednou (plugin při každém
+    kliknutí, služba na pozadí každých 30 s při přehrávání)."""
+
+    def setUp(self):
+        from nokturno_core.lib.store import Store
+        self.tmp = tempfile.mkdtemp()
+        self.store = Store(self.tmp)
+
+    def test_soubezne_procesy_neztrati_zapis(self):
+        import multiprocessing
+        ctx = multiprocessing.get_context("fork" if sys.platform != "win32" else "spawn")
+        procesy = [ctx.Process(target=_zapisovac, args=(self.tmp, znacka, 12))
+                   for znacka in ("a", "b", "c")]
+        for proces in procesy:
+            proces.start()
+        for proces in procesy:
+            proces.join(60)
+        from nokturno_core.lib.store import Store
+        data = Store(self.tmp).load("watched", {})
+        chybi = [f"{znacka}{i}" for znacka in ("a", "b", "c") for i in range(12)
+                 if f"{znacka}{i}" not in data]
+        self.assertEqual(chybi, [], f"ztracené zápisy: {len(chybi)} z 36")
+
+    def test_updating_cte_cerstva_data_a_uklada(self):
+        self.store.save("watched", {"stary": {"playcount": 1}})
+        jiny = self.store.__class__(self.tmp)
+        jiny.set_watched("mezitim")
+        with self.store.updating("watched", {}) as data:
+            self.assertIn("mezitim", data, "transakce musí číst z disku, ne z paměti")
+            data["novy"] = {"playcount": 1}
+        self.assertEqual(set(jiny.load("watched", {})), {"stary", "mezitim", "novy"})
+
+    def test_zamek_se_opravdu_bere_a_zase_pousti(self):
+        from nokturno_core.lib import store as store_mod
+        if store_mod.fcntl is None:
+            self.skipTest("bez fcntl (Windows)")
+        volani = []
+        puvodni = store_mod.fcntl.flock
+        store_mod.fcntl.flock = lambda fd, op: volani.append(op) or puvodni(fd, op)
+        try:
+            self.store.set_resume("tt1", 10, 100)
+        finally:
+            store_mod.fcntl.flock = puvodni
+        self.assertEqual(volani, [store_mod.fcntl.LOCK_EX, store_mod.fcntl.LOCK_UN])
+        self.assertTrue(pathlib.Path(self.tmp, "watched.lock").exists())
+
+    def test_vnorena_transakce_nezamrzne(self):
+        """`toggle_favourite` volá uvnitř `remember_item` — zámek patří popisovači,
+        takže druhé otevření téhož souboru by čekalo samo na sebe. Vnořená transakce
+        nad týmž jménem navíc musí dostat týž objekt, jinak by vnější uložení přepsalo
+        to, co zapsala vnitřní."""
+        self.store.toggle_favourite("tt1", {"title": "Film"})
+        with self.store.updating("items", {}) as data:
+            self.assertIn("tt1", data)
+            with self.store.updating("items", {}) as znovu:
+                znovu["tt2"] = {"title": "Druhý"}
+        self.assertEqual(set(self.store.load("items", {})), {"tt1", "tt2"})
+
+    def test_nezamykatelny_soubor_zapis_nezastavi(self):
+        """Síťový disk bez zámků, Android SAF — radši bez zámku než spadnout."""
+        from nokturno_core.lib import store as store_mod
+        if store_mod.fcntl is None:
+            self.skipTest("bez fcntl (Windows)")
+        puvodni = store_mod.fcntl.flock
+        store_mod.fcntl.flock = lambda fd, op: (_ for _ in ()).throw(OSError("nepodporováno"))
+        try:
+            self.store.set_resume("tt9", 5, 50)
+        finally:
+            store_mod.fcntl.flock = puvodni
+        self.assertEqual(self.store.resume("tt9"), (5, 50))
+
+    def test_soubory_s_tokeny_nejsou_citelne_pro_ostatni(self):
+        if sys.platform == "win32":
+            self.skipTest("práva jen na POSIX")
+        self.store.set_trakt({"access_token": "tajne"})
+        prava = pathlib.Path(self.tmp, "trakt.json").stat().st_mode & 0o777
+        self.assertEqual(prava, 0o600, f"{prava:o}")
+
+
 class TestResumeStream(unittest.TestCase):
     """Pokračování ve sledování si k pozici pamatuje i vnitřní referenci streamu
     (`ws:…`/`hs:…:…`/…), aby přehrání nemuselo znovu prohledávat všechny zdroje."""

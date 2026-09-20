@@ -7,15 +7,17 @@ import pathlib
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from nokturno_core import Engine                                         # noqa: E402
-from nokturno_core.lib import mediainfo                                  # noqa: E402
+from nokturno_core.lib import mediainfo, storage_api                     # noqa: E402
 from nokturno_core.lib.storage_api import (StorageApi, StorageError, match_texts,  # noqa: E402
                                            normalize_url, parse_ref, safe_path)
 
@@ -187,11 +189,48 @@ class TestProchazeni(unittest.TestCase):
             try:
                 self.assertEqual(len(api.files()), 5, "bez značky platí hodinová paměť")
                 srv.httpd.rev = "1789300000.5"
-                api._rev = (0.0, "")   # značka se čte nejvýš jednou za REV_TTL — tady jako po minutě
-                self.assertEqual(len(api.files()), 6, "nová značka = nové procházení")
-                self.assertEqual(api.revision(), "1789300000.5")
+                # značka se čte nejvýš jednou za REV_TTL, a to i mezi procesy (memo na disku) —
+                # nulové TTL tu zastupuje uplynulou minutu na obou vrstvách
+                with mock.patch.object(storage_api, "REV_TTL", 0):
+                    self.assertEqual(len(api.files()), 6, "nová značka = nové procházení")
+                    self.assertEqual(api.revision(), "1789300000.5")
             finally:
                 STROM["/dav/Filmy/"].pop()
+
+    def test_verejna_instance_ma_strop_slozek_a_casu(self):
+        """Nález 5 z auditu: útočník dá do adresy Stremia vlastní WebDAV, který každý
+        PROPFIND drží dlouho a vrací stále nové podsložky — jeden požadavek na streamy
+        by jinak držel osm vláken hodiny."""
+        from nokturno_core.lib import storage_api as sa
+        with Server() as srv:
+            api = StorageApi(srv.url, "nokturno", "tajne", max_dirs=1)
+            vysledek = api._crawl()
+            self.assertTrue(vysledek["truncated"], "po vyčerpání stropu se vrátí, co je")
+            self.assertLess(len(vysledek["files"]), 5)
+            # deadline: nula sekund = první vrstva se ani nezačne
+            api = StorageApi(srv.url, "nokturno", "tajne", crawl_deadline=0.0001)
+            time.sleep(0.01)
+            self.assertTrue(api._crawl()["truncated"])
+        self.assertEqual((sa.PUBLIC_CRAWL_DEADLINE, sa.PUBLIC_MAX_DIRS, sa.PUBLIC_TIMEOUT), (15, 100, 8))
+
+    def test_soukroma_instance_projde_cele_uloziste(self):
+        with Server() as srv:
+            api = StorageApi(srv.url, "nokturno", "tajne")
+            self.assertEqual((api.crawl_deadline, api.max_dirs), (None, 3000))
+            self.assertFalse(api._crawl()["truncated"])
+
+    def test_znacka_zmeny_se_pamatuje_i_mezi_procesy(self):
+        """Nález 15: memo v instanci platilo v Kodi vždy jen pro jeden výpis (plugin je
+        nový proces), takže spící NAS se budil znovu a znovu a dialog čekal na timeout."""
+        from nokturno_core.lib.store import Store
+        with Server() as srv:
+            srv.httpd.rev = "42"
+            cache = Store(tempfile.mkdtemp())
+            self.assertEqual(StorageApi(srv.url, "nokturno", "tajne", cache=cache).revision(), "42")
+            srv.httpd.rev = "99"
+            # druhý „proces": vlastní instance, tatáž složka profilu
+            self.assertEqual(StorageApi(srv.url, "nokturno", "tajne", cache=cache).revision(), "42")
+            self.assertEqual(StorageApi(srv.url, "nokturno", "tajne").revision(), "99", "bez cache se čte")
 
     def test_hlavicka_souboru_se_cte_s_heslem(self):
         with Server() as srv:
