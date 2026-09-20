@@ -207,6 +207,20 @@ class TestEngine(unittest.TestCase):
         row = engine.account_problems()[0]
         self.assertEqual((row["source"], row["code"]), ("webshare", "bad_login"))
 
+    def test_zapnuty_ale_nesparovany_cztor_se_hlasi(self):
+        """Podle `sources()` je nespárovaný CZtor „vypnutý" — a `not_paired` by se
+        tak nikdy neukázalo, přitom je to typické „zapnul jsem to a nejde to"."""
+        engine = Engine({"cz_enabled": True}, self.dir.name)
+        kody = {r["source"]: (r["level"], r["code"]) for r in engine.accounts()}
+        self.assertNotEqual(kody["cztor"][1], "off")
+        with mock.patch("urllib.request.urlopen", side_effect=AssertionError("síť")):
+            engine.refresh_accounts(only=["cztor"])
+        self.assertEqual(engine.account_problems()[0]["code"], "not_paired")
+
+    def test_luna_s_adresou_bez_tokenu_se_hlasi(self):
+        engine = Engine({"luna_url": "192.168.1.10:7126"}, self.dir.name)
+        self.assertNotEqual(engine.accounts()[accounts.SOURCES.index("luna")]["code"], "off")
+
     def test_hellspy_se_v_obnove_nikdy_nepta_po_siti(self):
         """Právě opakovanými dotazy si doplněk dvakrát přivodil blokaci (6.0.2, 6.0.4)."""
         engine = Engine({"hs_enabled": True}, self.dir.name)
