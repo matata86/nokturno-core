@@ -349,3 +349,38 @@ Relay ukládá `group_id`, `device_id` (náhodné, generované klientem), pořad
 revize, čas a blob. **Žádnou vazbu na `install_id` ze statistik** — jinak by šlo
 spárovat anonymní hlášení s konkrétní domácností a celá anonymita statistik by
 padla. Zařízení, které se dlouho neozve, se maže i s blobem.
+
+## Sdílené soubory a zámek (od 6.2.1)
+
+`Store` drží data v JSON souborech, na které sahá víc procesů najednou: doplněk v Kodi
+se spouští znovu při každém kliknutí a vedle něj běží služba na pozadí (pozici přehrávání
+zapisuje každých 30 s). `os.replace` je atomický, ale celý cyklus načti–uprav–ulož ne —
+prohrávající zápis tiše zahodil, co mezitím uložil ten druhý.
+
+Zápis, který vychází z dosavadního obsahu, proto patří do transakce:
+
+```python
+with store.updating("watched", {}) as data:
+    data[key] = {...}          # mění se NA MÍSTĚ, uloží se týž objekt
+```
+
+`updating()` vezme výhradní zámek na `<name>.lock` vedle dat (`fcntl.flock`, na Windows
+`msvcrt.locking`), načte čerstvý obsah z disku, předá ho a na konci uloží. Zamyká se
+prázdný soubor `.lock`, ne data samotná — zámek tak přežije `os.replace`. Když zamknout
+nejde (síťový disk, Android SAF), jen se pokračuje bez zámku a zapíše se to do logu:
+zámek nesmí být důvod, proč doplněk spadne.
+
+Vnořené volání nad **týmž** jménem dostane týž objekt a ukládá se jednou, na konci té
+vnější — jinak by vnitřní transakce načetla data z disku znovu a vnější by je svým
+uložením přepsala zpátky. Různá jména se vnořovat smí (`toggle_favourite` → `remember_item`).
+
+Soubory zakládá `Store.save()` s právy `0o600`: `trakt.json` a `cztor_session.json` nesou
+přístupové tokeny.
+
+## Stropy pro veřejnou instanci (od 6.2.1)
+
+Doplněk pro Stremio prochází úložiště, jehož adresu si uživatel zadal do nastavení v adrese
+doplňku — tedy cizí server. `StorageApi` proto bere `crawl_deadline`, `max_dirs` a `timeout`
+a `Engine` je předává jako `storage_limits`; hodnoty pro veřejnou instanci jsou
+`storage_api.PUBLIC_*` (15 s na průchod, 100 složek, 8 s na odpověď). Kodi a HA je nedostávají:
+tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
