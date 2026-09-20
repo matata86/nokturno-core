@@ -2263,3 +2263,88 @@ class TestWebshareTitulky(unittest.TestCase):
         self.assertEqual(_subtitle_rank("film.hu.srt", poradi), 0)
         self.assertEqual(_subtitle_rank("film.magyar.srt", poradi), 0)
         self.assertEqual(_subtitle_rank("film.cz.srt", poradi), 2, "cizí jazyk nakonec")
+
+
+class TestOpenSubtitlesVJadru(unittest.TestCase):
+    """Zapojení OpenSubtitles do `raw_streams()` — úloha vedle titulků z WebShare.
+
+    Hlídá tři věci, na kterých to stojí: že se výpadek titulků nepočítá mezi výpadky
+    zdrojů (jinak by se seznam streamů přestal cachovat), že se odkaz na titulky
+    přilepí jen tam, kde opravdu žádné nejsou (každé stažení jde z denní kvóty
+    uživatele), a že `resolve()` umí `os:` rozklíčovat.
+    """
+
+    META = {"id": "tt0133093", "imdb_id": "tt0133093", "name": "Matrix", "_title": "Matrix"}
+
+    def _engine(self, tmp, nalez=("os:11",)):
+        engine = Engine({"pref_lang": "CZ", "os_key": "k" * 32}, tmp)
+        engine._opensubtitles_subtitles = lambda *a, **k: list(nalez)
+        engine._webshare_subtitles = lambda *a, **k: []
+        engine.meta = lambda *a, **k: (self.META, None)
+        return engine
+
+    def test_titulky_nejsou_zdroj(self):
+        """Obě titulkové úlohy musí být vyjmuté ze stejných míst jako dřív jen WebShare."""
+        from nokturno_core.engine import OSUB_TASK, SUBS_TASK, SUBS_TASKS
+        self.assertEqual(set(SUBS_TASKS), {SUBS_TASK, OSUB_TASK})
+        zdroj = pathlib.Path("nokturno_core/engine.py").read_text(encoding="utf-8")
+        self.assertNotIn("label != SUBS_TASK", zdroj,
+                         "porovnání s jedinou úlohou by OpenSubtitles počítalo mezi výpadky zdrojů")
+
+    def test_prilepi_se_jen_bez_jinych_titulku(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            streamy = [
+                {"url": "ws:1", "label": "Matrix.1999.1080p.mkv", "_direct": True, "subtitles": []},
+                # české titulky přímo v souboru (pozná je `parse_stream` z názvu)
+                {"url": "ws:2", "label": "Matrix.1999.1080p.CZtit.mkv", "_direct": True, "subtitles": []},
+                {"url": "ws:3", "label": "Matrix.1999.720p.mkv", "_direct": True, "subtitles": ["ws:x"]},
+            ]
+            engine._webshare_streams = lambda *a, **k: streamy
+            for jmeno in ("_hellspy_streams", "_sledujteto_streams", "_fastshare_streams",
+                          "_cztor_streams", "_storage_streams", "_cross_streams"):
+                setattr(engine, jmeno, lambda *a, **k: [])
+            engine.api_for = lambda *a, **k: None
+            vysledek = engine.raw_streams("movie", "tt0133093", probe_audio=True)
+            podle_url = {s["url"]: s.get("subtitles") for s in vysledek}
+            self.assertEqual(podle_url["ws:1"], ["os:11"], "bez titulků → OpenSubtitles")
+            self.assertEqual(podle_url["ws:2"], [], "vlastní české titulky v souboru stačí")
+            self.assertEqual(podle_url["ws:3"], ["ws:x"], "titulky z WebShare mají přednost")
+
+    def test_resolve_os_odkazu(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+
+            class Api:
+                def odkaz(self, file_id):
+                    return "https://opensubtitles.example/soubor/%d" % file_id
+
+            engine._osub = Api()
+            self.assertEqual(engine.resolve("os:42"), "https://opensubtitles.example/soubor/42")
+            with self.assertRaises(NokturnoError):
+                engine.resolve("os:../../etc/passwd")
+
+    def test_seriál_bez_cisla_dilu_se_neptá(self):
+        """Dotaz bez čísla dílu by vrátil titulky k celé sérii — to je ta chyba z 5.2.34."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"pref_lang": "CZ", "os_key": "k" * 32}, tmp)
+            volano = []
+            engine._osub = type("A", (), {
+                "hledej_cachovane": lambda self, *a, **k: volano.append(a) or []})()
+            self.assertEqual(engine._opensubtitles_subtitles(self.META, {"season": 1}, "series"), [])
+            self.assertEqual(volano, [])
+
+    def test_bez_imdb_id_se_neptá(self):
+        """Podle názvu se tu nehledá schválně — jen tak může přijít cizí titul."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"pref_lang": "CZ", "os_key": "k" * 32}, tmp)
+            volano = []
+            engine._osub = type("A", (), {
+                "hledej_cachovane": lambda self, *a, **k: volano.append(a) or []})()
+            self.assertEqual(engine._opensubtitles_subtitles({"id": "sosac:123", "name": "X"}), [])
+            self.assertEqual(volano, [])
+
+    def test_bez_klice_je_zdroj_vypnuty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(Engine({"pref_lang": "CZ"}, tmp).osub)
+            self.assertIsNone(Engine({"os_key": "k" * 32, "os_enabled": False}, tmp).osub)

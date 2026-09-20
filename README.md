@@ -271,6 +271,59 @@ Cena na TMDB (studeně, pět vzorů po dvanácti doporučeních): 2–3 dotazy n
 s cache na 7 dní, k tomu detail na každý výsledný titul — ten má ale cache 30 dní
 a sdílí ji se všemi ostatními katalogy. Detail v `Kodi/dokumentace.md`.
 
+## Titulky z OpenSubtitles (`lib/opensubtitles_api.py`, 2026-09-20)
+
+Druhý zdroj titulků vedle fulltextu WebShare. Měřeno na ostré cache Stremia
+(3 363 výpisů streamů): **36,7 %** titulů nemá žádné české ani slovenské titulky
+a **14,5 %** ani dabing, ani titulky. Hledání `.srt` na WebShare zachrání 6,9
+procentního bodu, zbytek zavírá tenhle zdroj — v aktuálním žebříčku má CZ nebo SK
+titulky 83 % filmů a 92 % seriálů, a jde skoro výhradně o lidské překlady
+(ve vzorku 109 lidských proti 7 strojovým).
+
+### Co API vyžaduje (ověřeno živě, ne jen z dokumentace)
+
+* **Klíč je povinný na každý dotaz.** Bez hlavičky `Api-Key` projde jen holé
+  `?imdb_id=…`, a to jen když odpověď leží na CDN; `languages`, `query`,
+  `moviehash` i `page` vracejí `403 {"message":"You cannot consume this service"}`.
+  Klíč je vázaný na aplikaci, ne na uživatele — rozdává ho dashboard přes
+  `GET /os-key` (`DashApi.opensubtitles_key()`), do repozitáře nesmí.
+* **Parametry musí být v dotazu seřazené abecedně**, jinak server odpoví `301` na
+  kanonický tvar (drží si tím cache). Hlídá to test.
+* **Kvóta je na stahování, ne na hledání**: 5 souborů na IP za 24 h bez přihlášení,
+  20 s běžným účtem, u VIP bez omezení. Hledat jde zadarmo (strop 5 dotazů za
+  sekundu). Proto se stahuje až při přehrání a nejvýš jeden titulek na titul —
+  a proxovat to přes server nejde, kvóta se počítá na IP toho, kdo stahuje.
+* **Jazyky jsou ISO 639-1** (`cs`, `sk`), naše kódy jsou `CZ`/`SK`. Překlad se bere
+  z `tracks.LANG_CODES`, ať nevznikne druhá tabulka — bez něj se `cs` nepozná jako
+  čeština a české titulky spadnou v pořadí za slovenské (chytil to test, ne provoz).
+
+### Dvě cesty k titulkům
+
+**Podle IMDb id** (`Engine._opensubtitles_subtitles`, běží v `kolo()` jako úloha
+`OSUB_TASK` vedle titulků z WebShare). U seriálu jde dotaz na `parent_imdb_id`
+plus číslo sezóny a dílu zvlášť, takže se titulky k jinému dílu nemůžou přichytit —
+chyba, kterou u WebShare řešila 5.2.34; `_epizoda_sedi()` to navíc ověří
+z `feature_details` v odpovědi, ne z názvu souboru. Titul bez IMDb id se přeskočí:
+podle názvu se tu schválně nehledá, právě aby nemohl přijít cizí titul.
+
+**Podle otisku souboru** (`Engine.subtitles_by_hash`) — velikost souboru plus součet
+prvních a posledních 64 kB, sčítaný po osmi bajtech little-endian v 64 bitech.
+Takové titulky sedí i časově, ne jen k titulu. Začátek souboru už kvůli hlavičce
+čte `mediainfo.probe()`, konec stojí jediný `Range` dotaz navíc — proto se otisk
+nepočítá při výpisu streamů (to by byl dotaz na každý řádek), ale až u streamu,
+který si uživatel vybral, a jen když k němu nemáme lepší titulky.
+
+> **Naměřeno:** u dvanácti souborů z našich zdrojů (Matrix, Silo S01E01; WebShare
+> a HellSpy) se otisk netrefil ani jednou. České re-uploady a 4K remuxy do
+> OpenSubtitles nikdo nenahlašuje, otisk se tam páruje se scene releasy. Hlavní
+> cesta je tedy IMDb id; otisk je bonus pro toho, kdo hraje scene soubor.
+
+### Kam se to nepřilepí
+
+Odkaz `os:<file_id>` dostane jen stream, který nemá **ani** titulky ze zdroje či
+z WebShare, **ani** vlastní titulky v kontejneru v preferovaném jazyce. Každé
+stažení jde z denní kvóty uživatele, takže se s ní nakládá jako s penězi.
+
 ## Zapečetění kódem (`lib/sealbox.py`, 2026-09-20)
 
 Kryptografie, kterou dřív nesl jen `syncbox.py`, stojí od přenosu nastavení
