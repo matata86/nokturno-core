@@ -308,6 +308,8 @@ podle názvu se tu schválně nehledá, právě aby nemohl přijít cizí titul.
 
 **Podle otisku souboru** (`Engine.subtitles_by_hash`) — velikost souboru plus součet
 prvních a posledních 64 kB, sčítaný po osmi bajtech little-endian v 64 bitech.
+Výpočet je ověřený proti oficiálnímu testovacímu vektoru OpenSubtitles
+(`breakdance.avi`, 12 909 756 B → `8e245d9679d31e12`; ověřeno 2026-09-20).
 Takové titulky sedí i časově, ne jen k titulu. Začátek souboru už kvůli hlavičce
 čte `mediainfo.probe()`, konec stojí jediný `Range` dotaz navíc — proto se otisk
 nepočítá při výpisu streamů (to by byl dotaz na každý řádek), ale až u streamu,

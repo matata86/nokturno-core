@@ -53,6 +53,11 @@ def titulek(file_id, lang="cs", season=None, episode=None, hash_match=False, dow
 
 
 class TestOtisk(unittest.TestCase):
+    """Algoritmus je ověřený proti oficiálnímu testovacímu vektoru OpenSubtitles
+    (`breakdance.avi`, 12 909 756 B → `8e245d9679d31e12`) — ověřeno 2026-09-20 nad
+    staženým souborem, který v repozitáři nedrží. Testy níž hlídají to, co se dá
+    rozbít bez něj: šířku, endianitu, přetečení a odmítnutí neúplného výřezu."""
+
     def test_nulovy_soubor(self):
         """Dva bloky nul o velikosti 131072 dávají právě velikost — kontrola šířky i endianity."""
         self.assertEqual(otisk(bytes(BLOK), bytes(BLOK), 2 * BLOK), "0000000000020000")
