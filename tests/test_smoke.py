@@ -280,6 +280,23 @@ class TestSlucovaniPrimychStreamu(unittest.TestCase):
             streams.parse_stream(s)
         self.assertEqual(len(Engine._merge_direct(rows)), 2)
 
+    def test_lunin_radek_spojeny_s_webshare_dostane_hlavicku_souboru(self):
+        """Řádek z Luny spárovaný s nálezem z WebShare (`_ws_url`) má titulky a rozlišení
+        ze souboru — dřív se četl jen `url` (http Luny), takže je řádek neměl vůbec."""
+        info = {"width": 3840, "height": 1920, "duration": 3772, "size": 5184894213,
+                "audio": [{"lang": "EN", "channels": "5.1", "codec": "EAC3"}],
+                "subs": ["EN", "CZ", "FR"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            cteno = []
+            engine._media_from_file = lambda url: (cteno.append(url), info)[1]
+            luna = {"url": "http://luna:7126/stream/x", "label": "(WS) 4K", "detail": "5.0 GB",
+                    "source": "main", "_tracks": [{"lang": "EN", "channels": "5.1"}], "_ws_url": "ws:abc"}
+            engine._fill_audio([luna])
+            self.assertEqual(cteno, ["ws:abc"], "čte se přibalený odkaz WebShare, ne http Luny")
+            self.assertEqual(set(luna["subs"]), {"CZ", "EN", "FR"})
+            self.assertEqual(luna["_media"]["width"], 3840)
+
     def test_volby_kodi_audio_probe_fresh_a_uvolneny_filtr(self):
         """Volby, které si doplněk pro Kodi bere z nastavení: limit čtení hlaviček,
         zahřívání bez čtení cache a uvolněný fulltext značený `_loose` mimo cache."""
