@@ -54,6 +54,7 @@ nokturno_core/
 │   ├── prowlarr.py qbittorrent.py                  torrenty
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
+│   ├── accounts.py                                 stav účtů napříč zdroji (menu Kodi, senzor HA)
 │   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
 │   ├── foryou.py                                   „Pro tebe“: slití doporučení k naposledy zhlédnutým, losování žánru
 │   ├── sync.py syncbox.py                          synchronizace přes HA / přes slepý relay
@@ -122,6 +123,49 @@ Proč je to potřeba: **manifest Luna vydá i pro neplatný token** (jen s vých
 nastavením), takže kontrola „přišel manifest = zdroj funguje" byla falešně zelená.
 Ověřit token jde jedině dotazem na streamy, a to na víc titulech — hlavní zdroj
 Luny nemá všechno.
+
+## Stav účtů napříč zdroji (`lib/accounts.py`, 2026-09-20)
+
+Rozšíření téhož vzoru, jakým 5.2.30 vyřešila Lunu, na všechny zdroje. Za větou
+„prostě mi to nejde" stojí několik různých příčin a uživatel u televize je od
+sebe nerozezná: vypršelé předplatné WebShare, účet bez VIP (stahuje pár kB/s),
+pauza HellSpy po HTTP 429, Luna, která neběží, účet Sledujteto bez Premium,
+došlý kredit FastShare, nespárovaný CZtor.
+
+Modul vrací **kód příčiny a čísla, ne hotovou větu** — text si skládá každá
+větev sama, protože Kodi ho potřebuje na jeden řádek menu a HA do atributů
+senzoru. Úrovně jsou `ok` / `warn` / `fail` / `off` (zdroj vypnutý schválně).
+
+Klíčové je rozdělení na dvě metody:
+
+| | síť | kdo volá |
+|---|---|---|
+| `Engine.accounts()` | **ne** | menu v Kodi při každém otevření, senzor v HA |
+| `Engine.refresh_accounts()` | ano | služba v Kodi po 6 h, časovač v HA po 6 h |
+
+Menu se otevírá za 0,91 s (reuse invoker, 6.2.6) a to číslo se nesmí zhoršit,
+proto v cestě, kterou otevírá uživatel, není ani jedno čekání na odpověď.
+
+**Dotazů navíc je málo a jsou vzácné** — jeden na zdroj za `TTL`:
+
+* **HellSpy se neptá nikdy.** Jen si přečte vlastní pauzu po 429. Právě
+  opakovanými dotazy si doplněk blokaci dvakrát přivodil (6.0.2, 6.0.4).
+* **Co jádro zjistí při běžné práci, se zapíše rovnou** (`Engine._note_account`):
+  selhaný login WebShare rozlišený na „odmítnuté heslo" × „výpadek sítě". Zadarmo
+  a čerstvěji než jakákoli obnova na pozadí.
+* **CZtor** se bez `deep` spokojí s účtem ze session (párování a obnovu tokenu
+  dělá klient sám při běžné práci), **FastShare** čte šestihodinovou cache
+  přihlášení, kterou stejně používá přehrávání.
+* Kontrola předplatného WebShare, která dřív běžela zvlášť (`SubscriptionChecker`
+  v Kodi, `check_subscription` v HA), je teď jedním ze sedmi zdrojů v jedné
+  obnově — dotazů na WebShare tím nepřibylo.
+
+`TTL` je 12 h, tedy **delší** než interval obnovy na pozadí (6 h). S obojím
+stejným by v menu stál stav trvale označený jako zastaralý.
+
+Pauza HellSpy se od 6.3.0 ukládá i na disk (`blocked_for(cache)`): paměť procesu
+na ni nestačí, protože v Kodi je plugin jiný interpret než služba na pozadí a bez
+disku by jeden o pauze druhého nevěděl.
 
 ## CZtor (`lib/cztor_api.py`, 2026-09-19)
 
