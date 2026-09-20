@@ -1589,6 +1589,13 @@ class Engine:
         pool.shutdown(wait=False)
 
     @staticmethod
+    def _same_file(stream, info):
+        """Hlavička přibaleného souboru WebShare sedí k Lunině řádku: jazyky zvuku se shodují."""
+        mine = {t.get("lang") for t in stream.get("_tracks") or [] if t.get("lang")} | set(stream.get("langs") or [])
+        theirs = {t.get("lang") for t in info.get("audio") or [] if t.get("lang")}
+        return not mine or mine == theirs
+
+    @staticmethod
     def _probe_url(stream):
         """Odkaz, ze kterého se čte hlavička: vlastní, u Luny přibalený přímý z WebShare."""
         url = str(stream.get("url") or "")
@@ -1696,8 +1703,10 @@ class Engine:
         for stream, info in ((s, results.get(id(s))) for s in todo):
             if not info:
                 continue
+            if self._probe_url(stream) != stream.get("url") and not self._same_file(stream, info):
+                continue   # spárování s WebShare je odhad podle velikosti — cizí soubor by přinesl cizí titulky
             text = describe_media(info)
-            if text:
+            if text and text not in (stream.get("detail") or ""):
                 stream["detail"] = f"{stream['detail']} | {text}" if stream.get("detail") else text
             stream["_tracks"] = info.get("audio") or []
             stream["_media"] = info
