@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from nokturno_core.lib import syncbox  # noqa: E402
 from nokturno_core.lib.store import Store  # noqa: E402
+from nokturno_core.lib.sync import collect_changes
 from nokturno_core.lib.syncbox import (  # noqa: E402
     CODE_LEN, Relay, SyncError, filter_circles, format_code, new_code,
     keys_for, normalize_code, sanitize, seal, sync_once, unseal, valid_code,
@@ -319,3 +320,49 @@ class TestVymena(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHomeAssistantJakoClen(unittest.TestCase):
+    """HA je členem skupiny na relayi a zároveň středem pro Kodi v místní síti.
+
+    Kodi mimo domácí síť (mobil) na `/api/nokturno/sync` nedosáhne, na relay ano.
+    Aby byl most úplný, musí se změna přijatá z relaye rozeslat dál i Kodi, která
+    chodí přes HA — a ta si berou jen záznamy novější než poslední výměna. Proto
+    HA volá `sync_once(stamp=True)` a přijatým záznamům razí čas příjmu (`rts`).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.mobil = store(self.tmp, "mobil")
+        self.ha = store(self.tmp, "ha")
+        self.relay = FakeRelay()
+        self.patch = mock.patch("urllib.request.urlopen", side_effect=self.relay.urlopen)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        Relay(keys_for(KOD), "master").open_group()
+
+    def _stary_zaznam(self, key, stari=1000):
+        """Mobil byl dlouho bez signálu: záznam vznikl dávno a na relay jde až teď."""
+        self.mobil.set_watched(key, True)
+        watched = self.mobil.reload("watched", {})
+        watched[key]["ts"] = int(time.time()) - stari
+        self.mobil.save("watched", watched)
+        sync_once(self.mobil, KOD, name="Mobil")
+
+    def test_prijata_zmena_se_posle_dal_kodi_pres_ha(self):
+        self._stary_zaznam("tt900")
+        posledni_vymena = int(time.time()) - 500   # HA si s Kodi vyměnilo data mezitím
+
+        ok, _, pulled, why = sync_once(self.ha, KOD, name="Home Assistant", stamp=True)
+        self.assertTrue(ok, why)
+        self.assertGreaterEqual(pulled, 1)
+
+        # bez `rts` by filtr `since` záznam přeskočil — vznikl před poslední výměnou
+        self.assertIn("tt900", collect_changes(self.ha, posledni_vymena)["watched"])
+
+    def test_bez_stampu_zustane_zaznam_stat(self):
+        self._stary_zaznam("tt901")
+        posledni_vymena = int(time.time()) - 500
+        sync_once(self.ha, KOD, name="Kodi")       # Kodi `stamp` nepoužívá
+        self.assertNotIn("tt901", collect_changes(self.ha, posledni_vymena)["watched"])
