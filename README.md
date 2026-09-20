@@ -3,7 +3,7 @@
 [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
 
 Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, CZtoru, Luně
-a na trackerech přes Prowlarr — bez vazby na hostitele.
+a na trackerech přes Prowlarr, k tomu titulky z OpenSubtitles — bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
 z `homeassistant`, což hlídá test.
@@ -53,6 +53,10 @@ nokturno_core/
 │   ├── webshare_api.py sosac_direct.py hellspy_api.py   zdroje streamů
 │   ├── prowlarr.py qbittorrent.py                  torrenty
 │   ├── streams.py mediainfo.py                     rozbor a řazení streamů
+│   ├── cztor_api.py opensubtitles_api.py           CZtor (párování PINem) a titulky z OpenSubtitles
+│   ├── tracks.py                                   volba zvuku a titulků podle jazyka (CZ, SK, EN, HU)
+│   ├── safe_redirect.py abort.py                   přesměrování bez úniku hlaviček, přerušení práce při vypnutí
+│   ├── setsync.py                                  nastavení a přihlášení sdílené synchronizací
 │   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
 │   ├── accounts.py                                 stav účtů napříč zdroji (menu Kodi, senzor HA)
 │   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
@@ -507,3 +511,18 @@ doplňku — tedy cizí server. `StorageApi` proto bere `crawl_deadline`, `max_d
 a `Engine` je předává jako `storage_limits`; hodnoty pro veřejnou instanci jsou
 `storage_api.PUBLIC_*` (15 s na průchod, 100 složek, 8 s na odpověď). Kodi a HA je nedostávají:
 tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
+
+## Další části jádra
+
+- **Jazyky.** Kódy zvuku a titulků `CZ`, `SK`, `EN` a `HU` (maďarština, od 5.5.0). Titulky bez jazykové
+  značky se rozpoznají z textu; `SUBTITLE_FALLBACK` řadí blízký jazyk (CZ ↔ SK) jako náhradu.
+- **Rozpočet na zdroj (`SOURCE_DEADLINE`).** Zdroj, který neodpoví v limitu, se bere jako výpadek: jeho
+  výsledek se necachuje a doběhne na pozadí. Rozpočet je společný pro všechna kola hledání.
+- **Sloučené verze streamů (`group_streams`).** Stejné verze souboru (kvalita, jazyky, titulky, zvuk, HDR,
+  velikost do ±10 %) se slučují do jednoho řádku s „×N“, přehrání zkusí další kopii.
+- **Přesměrování (`lib/safe_redirect.py`).** Při přesměrování na cizí host se neposílají hlavičky
+  `Authorization` ani `Cookie`.
+- **Nastavení přes synchronizaci (`lib/setsync.py`).** Okruhy `settings` a `accounts` sdílejí nastavení
+  a přihlášení mezi zařízeními; nesdílí se adresář stahování ani tokeny CZtoru a Traktu.
+- **Diagnostika Luny.** `luna_api.diagnose()` vrací kód příčiny (viz výše); manifest Luny se neověřuje tokenem,
+  proto se ptá na streamy.
