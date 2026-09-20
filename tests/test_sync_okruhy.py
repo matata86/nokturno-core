@@ -7,6 +7,7 @@ dorovná i to, co přišlo, dokud byl vypnutý.
 import io
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 import time
@@ -84,3 +85,25 @@ class TestOkruhyHA(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResetSince(unittest.TestCase):
+    """Most mezi středisky: po příjmu z relaye musí jít celý stav i do HA."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        self.store = Store(self.tmp)
+
+    def test_vynuluje_since_a_zbytek_necha(self):
+        self.store.save(sync.STATE, {"since": 12345, "last_ok": 9, "device": "x"})
+        sync.reset_since(self.store)
+        stav = self.store.reload(sync.STATE, {})
+        self.assertEqual(stav["since"], 0)
+        self.assertEqual(stav["last_ok"], 9)
+        self.assertEqual(stav["device"], "x")
+
+    def test_bez_since_nic_nezapisuje(self):
+        self.store.save(sync.STATE, {"since": 0, "last_ok": 5})
+        sync.reset_since(self.store)
+        self.assertEqual(self.store.reload(sync.STATE, {})["last_ok"], 5)
