@@ -170,6 +170,39 @@ Pauza HellSpy se od 6.3.0 ukládá i na disk (`blocked_for(cache)`): paměť pro
 na ni nestačí, protože v Kodi je plugin jiný interpret než služba na pozadí a bez
 disku by jeden o pauze druhého nevěděl.
 
+## Přehraj.to (`lib/prehrajto_api.py`, 2026-09-21)
+
+Osmý zdroj. Vlastní rozhraní nemá — `/api/*` vrací 404, takže se čtou tytéž
+stránky jako v prohlížeči (`/hledej/<text>`, `/<slug>/<hash>`). Totéž dělá
+oficiální doplněk pro Kodi `plugin.video.prehrajto` 2.0.5.
+
+**Účet je nepovinný a mění výsledek, ne jen rychlost.** Bez něj server vydá jen
+první stranu hledání (dál chce přihlášení) a stránka videa nabídne překódované
+1080p a 720p. S Premium účtem se stránkuje a `?do=download` vydá **původní
+soubor**, tedy i 4K a HDR. Proto je e-mail účtu součástí otisku v klíči cache
+streamů a velikost z výpisu (patří originálu) se bez účtu neukazuje.
+
+Podepsaný odkaz CDN **nedrží na IP**, umí `Range` a nechce hlavičky ani cookie —
+hraje tedy i v Stremiu a ve stahování, na rozdíl od FastShare. Platí zhruba den,
+dohledává se až při přehrání (`pt:<slug>:<hash>`). Slug v odkazu musí sedět:
+stránka videa ho ignoruje, ale `?do=download` na cizím slugu odkaz nevydá.
+
+Dvě vlastnosti serveru:
+
+- **HTTP 429** s plovoucím limitem — dvacet dotazů v dávce prošlo, dvanáct po
+  1,5 s ne. Po první 429 se zdroj na `RATE_LIMIT_COOLDOWN` (10 min) přeskakuje,
+  pauza je na disku jako u HellSpy (v Kodi je plugin jiný proces než služba).
+- **Prázdná odpověď na některé dotazy.** `okresni prebor` vrátí nulu, `prebor
+  okresni` i `okresni prebo` plnou stranu. Vada jejich indexu u konkrétního
+  řetězce; jádro zkouší víc variant názvu, takže se přes to obvykle přenese samo.
+
+Přihlášení se ukládá (`SESSION_TTL` 6 h): každé zakládá na serveru záznam
+v „Správě přihlášených zařízení" a tarif mluví o pěti zařízeních.
+
+Titulky ze stránky (`pts:<slug>:<hash>:<pořadí>`, `tracks()`) jsou hotové
+a otestované, ale do výpisu streamů se zatím nepřipínají — stálo by to jeden
+dotaz na stránku u každého streamu a to je proti limitu 429 moc.
+
 ## CZtor (`lib/cztor_api.py`, 2026-09-19)
 
 Sedmý zdroj: katalog na předplatné (cztor.com, soubory na giganthost.com). API je to,
