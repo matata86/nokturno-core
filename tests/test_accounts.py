@@ -228,6 +228,20 @@ class TestEngine(unittest.TestCase):
         engine = Engine({"luna_url": "192.168.1.10:7126"}, self.dir.name)
         self.assertNotEqual(engine.accounts()[accounts.SOURCES.index("luna")]["code"], "off")
 
+    def test_vypnuta_luna_se_nekontroluje(self):
+        """Adresa Luny má v Kodi výchozí hodnotu, takže je vyplněná i u toho, kdo
+        zdroj nikdy nezapnul — stav pak hlásil „běží, ale chybí token" (`6.6.0~beta11`)."""
+        engine = Engine({"luna_enabled": False, "luna_url": "192.168.1.10:7126",
+                         "luna_token": "abc"}, self.dir.name)
+        self.assertEqual(engine.accounts()[accounts.SOURCES.index("luna")]["code"], "off")
+        with mock.patch("urllib.request.urlopen", side_effect=AssertionError("síť")):
+            engine.refresh_accounts(only=["luna"])
+
+    def test_bez_prepinace_rozhoduji_vyplnene_udaje(self):
+        """HA a Stremio `luna_enabled` neposílají — pro ně se nic nemění."""
+        engine = Engine({"luna_url": "192.168.1.10:7126"}, self.dir.name)
+        self.assertNotEqual(engine.accounts()[accounts.SOURCES.index("luna")]["code"], "off")
+
     def test_hellspy_se_v_obnove_nikdy_nepta_po_siti(self):
         """Právě opakovanými dotazy si doplněk dvakrát přivodil blokaci (6.0.2, 6.0.4)."""
         engine = Engine({"hs_enabled": True}, self.dir.name)
