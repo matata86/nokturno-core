@@ -2490,3 +2490,24 @@ class TestZamekPerKlicCache(unittest.TestCase):
             store.cached("k", 60, spadne)
         self.assertEqual(store._key_locks, {})
         self.assertEqual(store.cached("k", 60, lambda: 7), 7)
+
+
+class TestHellspy429Text(unittest.TestCase):
+    """HTTP 429 od HellSpy není překročený limit dotazů, ale blokace sítě uživatele
+    (měřeno 2026-09-21: 76 hledání/s z čisté IP bez jediné 429; uživatelé s 429 ji mají
+    od prvního dotazu). Hláška to má říct, ne psát holé „HTTP 429"."""
+
+    def test_429_od_hellspy_rika_ze_odmita_sit(self):
+        from nokturno_core.lib.hellspy_api import HellspyRateLimited
+        from nokturno_core.lib.source_errors import describe_failure
+        text = describe_failure("HellSpy", HellspyRateLimited("HTTP 429"))
+        self.assertIn("odmítá tuto síť", text)
+        self.assertIn("VPN", text)
+        self.assertNotIn("HTTP 429:", text)
+        pauza = HellspyRateLimited("HTTP 429 (pauza)")
+        pauza.paused = True
+        self.assertEqual(describe_failure("HellSpy", pauza), text)
+
+    def test_429_jineho_zdroje_zustava_obecne(self):
+        from nokturno_core.lib.source_errors import describe_failure
+        self.assertEqual(describe_failure("Přehraj.to", "HTTP 429"), "Přehraj.to: HTTP 429")
