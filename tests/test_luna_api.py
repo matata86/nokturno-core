@@ -222,5 +222,40 @@ class TestDiscover(unittest.TestCase):
             self.assertEqual(discover(subnet="192.168.1", should_stop=lambda: True), [])
 
 
+class TestNedostupnaLuna(unittest.TestCase):
+    """Server mimo dosah se po prvním neúspěchu pět minut nevolá — dřív každý výpis
+    (série, žánry, katalog) čekal na timeout systému přes 20 s znovu."""
+
+    def _api(self, tmp):
+        from nokturno_core.lib.store import Store
+        return luna_api.LunaApi("http://192.168.1.10:7126", "e1.TOKEN", cache=Store(tmp))
+
+    def test_druhe_volani_selze_hned_bez_site(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            api = self._api(tmp)
+            with mock.patch.object(luna_api.socket, "create_connection", side_effect=TimeoutError("timed out")) as spoj:
+                with self.assertRaises(LunaError):
+                    api.manifest()
+                with self.assertRaises(LunaError) as ctx:
+                    api.catalog("movie", "top")
+            self.assertEqual(spoj.call_count, 1, "po výpadku se na síť už nesahá")
+            self.assertIn("neodpovídá", str(ctx.exception))
+            self.assertNotIn("TOKEN", str(ctx.exception))
+
+    def test_chyba_odpovedi_neznamena_vypadek(self):
+        import tempfile
+        import urllib.error
+        with tempfile.TemporaryDirectory() as tmp:
+            api = self._api(tmp)
+            with mock.patch.object(luna_api.socket, "create_connection"), \
+                    mock.patch.object(luna_api.urllib.request, "urlopen",
+                                      side_effect=urllib.error.HTTPError("u", 500, "x", {}, None)) as otevri:
+                for _ in range(2):
+                    with self.assertRaises(LunaError):
+                        api.manifest()
+            self.assertEqual(otevri.call_count, 2, "HTTP 500 je odpověď serveru, ne výpadek")
+
+
 if __name__ == "__main__":
     unittest.main()
