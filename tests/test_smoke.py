@@ -720,6 +720,10 @@ class TestAudit20260919(unittest.TestCase):
         engine._webshare_subtitles = lambda *a, **k: []
         engine._webshare_streams = lambda *a, **k: [
             {"url": "ws:abc", "label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB", "source": "ws", "_direct": True}]
+        # bez sítě: český název z Wikidat a anglický z Cinemety leží mimo deadline zdrojů
+        # a na CI běžci s pomalou cestou k nim časové testy padaly (2026-09-21, 5–12 s)
+        engine.original_titles = lambda *a, **k: []
+        engine._with_local_title = lambda ctype, base_id, meta: meta
         return engine
 
     def test_selhany_login_webshare_je_vypadek(self):
@@ -2552,3 +2556,33 @@ class TestHlavickyZeServeru(unittest.TestCase):
         e.dash.media = lambda idents: volani.append(list(idents)) or {}
         e._media_hints(["ws:znamy", "ws:novy", "pt:1:s:h", "dav:0:/x", "ws:novy"])
         self.assertEqual(volani, [["ws:novy"]])
+
+
+class TestZamekCekajiciDostanouNeuspech(unittest.TestCase):
+    """Čekající nad týmž klíčem dostanou výsledek prvního, i když neprošel `ok()` —
+    jinak by po neúspěchu spouštěli loader jeden po druhém (5 × timeout místo 1×)."""
+
+    def test_neuspech_se_nestahuje_znovu_pro_cekajici(self):
+        import threading
+        from nokturno_core.lib.store import Store
+        store = Store(tempfile.mkdtemp())
+        volani, brana = [], threading.Event()
+
+        def loader():
+            volani.append(1)
+            brana.wait(2)
+            return {"ok": False}
+        vysledky = []
+        vlakna = [threading.Thread(target=lambda: vysledky.append(
+            store.cached_if("k", 60, loader, ok=lambda d: d.get("ok")))) for _ in range(5)]
+        for t in vlakna:
+            t.start()
+        time.sleep(0.2)
+        brana.set()
+        for t in vlakna:
+            t.join(5)
+        self.assertEqual(len(volani), 1)
+        self.assertEqual(vysledky, [{"ok": False}] * 5)
+        # po rozchodu všech se neúspěch nedrží: další volání zkusí znovu
+        self.assertEqual(store.cached_if("k", 60, lambda: {"ok": True}, ok=lambda d: d.get("ok")), {"ok": True})
+        self.assertEqual(len(volani), 1)
