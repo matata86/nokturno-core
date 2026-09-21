@@ -723,7 +723,7 @@ class TestAudit20260919(unittest.TestCase):
             c = Engine({"ws_username": "u"}, tmp)._streams_cache_key("movie", "tt1")
             self.assertEqual(len({a, b, c}), 3)
             self.assertEqual(a, Engine({}, tmp)._streams_cache_key("movie", "tt1"), "stejné nastavení = stejný klíč")
-            self.assertTrue(a.startswith("streams6:movie:tt1:"))
+            self.assertTrue(a.startswith("streams7:movie:tt1:"))
 
     def test_titulky_jen_pri_probe_audio(self):
         with tempfile.TemporaryDirectory() as tmp:
