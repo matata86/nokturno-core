@@ -22,6 +22,7 @@ from nokturno_core.lib import accounts, hellspy_api  # noqa: E402
 from nokturno_core.lib.cztor_api import CztorError  # noqa: E402
 from nokturno_core.lib.fastshare_api import FastshareError  # noqa: E402
 from nokturno_core.lib.sledujteto_api import SledujtetoError  # noqa: E402
+from nokturno_core.lib.storage_api import StorageError  # noqa: E402
 from nokturno_core.lib.webshare_api import WebshareApiError, WebshareError  # noqa: E402
 from nokturno_core import Engine  # noqa: E402
 from nokturno_core.lib.store import Store  # noqa: E402
@@ -203,6 +204,50 @@ class TestEngine(unittest.TestCase):
         kody = {r["source"]: r["code"] for r in engine.accounts()}
         self.assertEqual(kody["webshare"], "error")
         self.assertEqual(kody["hellspy"], "ok")   # ostatní zdroje výpadek jednoho nesmí strhnout
+
+    def test_bez_site_se_ulozeny_stav_necha(self):
+        """Mobil: Kodi na pozadí nebo hned po startu nemá síť, obnova skončí
+        „neodpovídá" u všeho a v menu to pak stálo do další obnovy (nahlášeno
+        z mobilu na `6.6.0~beta13`). Když nešlo dosáhnout na žádný síťový zdroj,
+        je bez sítě zařízení — stav zůstává a zapíše se jen značka."""
+        from nokturno_core.lib.webshare_api import WebshareError
+        engine = Engine({"ws_username": "kdosi", "ws_password": "x", "hs_enabled": True,
+                         "dav1_url": "http://nas/dav", "dav1_user": "u", "dav1_pass": "p"}, self.dir.name)
+        with mock.patch.object(Engine, "ws", mock.PropertyMock(
+                return_value=FakeWs(vip=True, days=90, until="2026-12-20 08:00:00"))), \
+             mock.patch("nokturno_core.lib.accounts.storage", return_value=accounts._zaznam(accounts.OK, "ok")):
+            engine.refresh_accounts()
+        sitova = WebshareError("x"); sitova.__cause__ = urllib.error.URLError("no route")
+        with mock.patch.object(Engine, "ws", mock.PropertyMock(return_value=None)), \
+             mock.patch.object(engine, "ws_error", sitova), \
+             mock.patch("nokturno_core.lib.accounts.storage", side_effect=StorageError("no route")):
+            engine.refresh_accounts()
+        kody = {r["source"]: r["code"] for r in engine.accounts()}
+        self.assertEqual((kody["webshare"], kody["storage"]), ("vip", "ok"))
+        self.assertTrue(engine.offline_recently())
+
+    def test_jeden_nedostupny_zdroj_se_ulozi(self):
+        """Neodpovídá-li jen jeden a ostatní ano, je to jeho výpadek, ne naše síť."""
+        engine = Engine({"ws_username": "kdosi", "ws_password": "x",
+                         "dav1_url": "http://nas/dav", "dav1_user": "u", "dav1_pass": "p"}, self.dir.name)
+        with mock.patch.object(Engine, "ws", mock.PropertyMock(
+                return_value=FakeWs(vip=True, days=90, until="2026-12-20 08:00:00"))), \
+             mock.patch("nokturno_core.lib.accounts.storage", side_effect=StorageError("no route")):
+            engine.refresh_accounts()
+        kody = {r["source"]: r["code"] for r in engine.accounts()}
+        self.assertEqual((kody["webshare"], kody["storage"]), ("vip", "unreachable"))
+        self.assertFalse(engine.offline_recently())
+
+    def test_vypadek_pri_hledani_neprepise_overeny_stav(self):
+        """`ws` selže na síti při jednom hledání — ověřené VIP zůstává; odmítnuté
+        heslo naopak přepíše hned (uživatel musí zasáhnout)."""
+        from nokturno_core.lib.webshare_api import WebshareApiError, WebshareError
+        engine = Engine({"ws_username": "kdosi", "ws_password": "x"}, self.dir.name)
+        engine._note_account("webshare", accounts._zaznam(accounts.OK, "vip", days=90))
+        engine._note_account("webshare", {"level": accounts.FAIL, "code": "unreachable", "detail": {}})
+        self.assertEqual(engine.accounts()[accounts.SOURCES.index("webshare")]["code"], "vip")
+        engine._note_account("webshare", {"level": accounts.FAIL, "code": "bad_login", "detail": {}})
+        self.assertEqual(engine.accounts()[accounts.SOURCES.index("webshare")]["code"], "bad_login")
 
     def test_selhany_login_se_zapise_uz_pri_bezne_praci(self):
         """Za nula dotazů navíc: `ws` selže při hledání a menu to ví hned."""
