@@ -2370,3 +2370,123 @@ class TestOpenSubtitlesVJadru(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(Engine({"pref_lang": "CZ"}, tmp).osub)
             self.assertIsNone(Engine({"os_key": "k" * 32, "os_enabled": False}, tmp).osub)
+
+
+class TestSpolecneUloziste(unittest.TestCase):
+    """`Engine(shared_store=)`: co na účtu nezávisí, jde do společného úložiště
+    (Stremio — jeden proces, stovky nastavení); tokeny a streamy zůstávají v tom
+    vlastním. Bez `shared_store` je obojí totéž (Kodi, HA)."""
+
+    def setUp(self):
+        from nokturno_core.lib.store import Store
+        self.vlastni = tempfile.mkdtemp()
+        self.spolecne = Store(tempfile.mkdtemp())
+        self.engine = Engine({"hs_enabled": "true", "tmdb_api_key": "k"}, self.vlastni,
+                             shared_store=self.spolecne)
+
+    def _soubory(self, store):
+        return set(pathlib.Path(store.dir, "cache").glob("*.json"))
+
+    def test_bez_shared_store_je_spolecne_totez_co_vlastni(self):
+        engine = Engine({}, tempfile.mkdtemp())
+        self.assertIs(engine.shared, engine.store)
+
+    def test_hellspy_tmdb_cinemeta_cachuji_do_spolecneho(self):
+        self.assertIs(self.engine.hs.cache, self.spolecne)
+        self.assertIs(self.engine.tmdb.cache, self.spolecne)
+        self.assertIs(self.engine.cinemeta.cache, self.spolecne)
+        self.assertIs(self.engine.sosac_db.cache, self.spolecne)
+
+    def test_hlavicka_webshare_do_spolecneho_prehrajto_do_vlastniho(self):
+        from nokturno_core import engine as engine_mod
+        info = {"audio": ["cs"], "height": 1080, "size": 1}
+        puvodni = engine_mod.probe_media
+        engine_mod.probe_media = lambda url: info
+        self.engine.resolve = lambda url, prefer_external=False: "http://x/" + url
+        try:
+            self.engine._media_from_file("ws:abc")
+            self.assertEqual(len(self._soubory(self.spolecne)), 1)
+            self.assertEqual(len(self._soubory(self.engine.store)), 0)
+            self.engine._media_from_file("pt:1:slug:hash")
+            self.engine._media_from_file("st:77")
+            self.engine._media_from_file("dav:0:/film.mkv")
+            self.assertEqual(len(self._soubory(self.spolecne)), 1)
+            self.assertEqual(len(self._soubory(self.engine.store)), 3)
+        finally:
+            engine_mod.probe_media = puvodni
+
+    def test_druhe_jadro_cte_hlavicku_z_cache_prvniho(self):
+        from nokturno_core import engine as engine_mod
+        volani = []
+
+        def probe(url):
+            volani.append(url)
+            return {"audio": ["cs"], "height": 720, "size": 5}
+        puvodni = engine_mod.probe_media
+        engine_mod.probe_media = probe
+        try:
+            druhe = Engine({}, tempfile.mkdtemp(), shared_store=self.spolecne)
+            for e in (self.engine, druhe):
+                e.resolve = lambda url, prefer_external=False: "http://x/" + url
+            self.assertEqual(self.engine._media_from_file("ws:abc")["height"], 720)
+            self.assertEqual(druhe._media_from_file("ws:abc")["height"], 720)
+            self.assertEqual(len(volani), 1)
+        finally:
+            engine_mod.probe_media = puvodni
+
+
+class TestZamekPerKlicCache(unittest.TestCase):
+    """`Store.cached_if()`: souběh nad týmž klíčem stáhne jednou, různé klíče se neblokují."""
+
+    def test_soubezne_dotazy_na_tyz_klic_stahnou_jednou(self):
+        import threading
+        from nokturno_core.lib.store import Store
+        store = Store(tempfile.mkdtemp())
+        volani, brana = [], threading.Event()
+
+        def loader():
+            volani.append(1)
+            brana.wait(2)
+            return {"ok": 1}
+        vysledky = []
+        vlakna = [threading.Thread(target=lambda: vysledky.append(store.cached("k", 60, loader)))
+                  for _ in range(8)]
+        for t in vlakna:
+            t.start()
+        time.sleep(0.2)
+        brana.set()
+        for t in vlakna:
+            t.join(5)
+        self.assertEqual(len(volani), 1)
+        self.assertEqual(vysledky, [{"ok": 1}] * 8)
+        self.assertEqual(store._key_locks, {})   # po doběhnutí se zámek uklidí
+
+    def test_ruzne_klice_se_neblokuji(self):
+        import threading
+        from nokturno_core.lib.store import Store
+        store = Store(tempfile.mkdtemp())
+        brana = threading.Event()
+        hotovo = []
+
+        def pomaly():
+            brana.wait(2)
+            return {"a": 1}
+        t = threading.Thread(target=lambda: store.cached("pomaly", 60, pomaly))
+        t.start()
+        time.sleep(0.05)
+        zacatek = time.time()
+        self.assertEqual(store.cached("rychly", 60, lambda: {"b": 2}), {"b": 2})
+        self.assertLess(time.time() - zacatek, 0.5)
+        brana.set()
+        t.join(5)
+
+    def test_vyjimka_loaderu_uvolni_zamek(self):
+        from nokturno_core.lib.store import Store
+        store = Store(tempfile.mkdtemp())
+
+        def spadne():
+            raise ValueError("x")
+        with self.assertRaises(ValueError):
+            store.cached("k", 60, spadne)
+        self.assertEqual(store._key_locks, {})
+        self.assertEqual(store.cached("k", 60, lambda: 7), 7)
