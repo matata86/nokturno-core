@@ -202,3 +202,40 @@ class TestTmdbPodobne(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMediaHlavicky(unittest.TestCase):
+    """`DashApi.media()` — hlavičky souborů ze společné cache serveru."""
+
+    def setUp(self):
+        from nokturno_core.lib.store import Store
+        self.api = DashApi(cache=Store(tempfile.mkdtemp()))
+
+    def test_vrati_jen_trefy_spravneho_tvaru(self):
+        odpoved = {"hits": {"ws:abc": {"audio": [{"lang": "cs"}], "height": 1080},
+                            "ws:cizi": {"audio": [], "height": 0},      # prázdná hlavička
+                            "ws:nechtel": {"height": 720}}}             # neptali jsme se
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/media": odpoved})):
+            hits = self.api.media(["ws:abc", "ws:cizi", "hs:1:h", "dav:0:/x", "pt:1:s:h"])
+        self.assertEqual(set(hits), {"ws:abc"})
+
+    def test_posila_jen_sdilene_identy_a_nejvys_50(self):
+        sit = Sit({"/media": {"hits": {}}})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            self.api.media([f"ws:{i}" for i in range(60)] + ["dav:0:/x"])
+        dotaz = sit.volani[0]
+        self.assertIn("ids=", dotaz)
+        self.assertNotIn("dav", dotaz)
+        self.assertEqual(dotaz.count("ws%3A"), 50)
+
+    def test_vypadek_znamena_prazdno_a_pauzu(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/media": urllib.error.URLError("x")})):
+            self.assertEqual(self.api.media(["ws:abc"]), {})
+        sit = Sit({"/media": {"hits": {"ws:abc": {"height": 1}}}})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            self.assertEqual(self.api.media(["ws:abc"]), {})   # DOWN_TTL: bez sítě
+        self.assertEqual(sit.volani, [])
+
+    def test_404_je_vypnuta_funkce(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/media": urllib.error.HTTPError("u", 404, "x", {}, None)})):
+            self.assertEqual(self.api.media(["ws:abc"]), {})

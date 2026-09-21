@@ -2511,3 +2511,44 @@ class TestHellspy429Text(unittest.TestCase):
     def test_429_jineho_zdroje_zustava_obecne(self):
         from nokturno_core.lib.source_errors import describe_failure
         self.assertEqual(describe_failure("Přehraj.to", "HTTP 429"), "Přehraj.to: HTTP 429")
+
+
+class TestHlavickyZeServeru(unittest.TestCase):
+    """`Engine._media_hints()`: hlavičky, které server zná, se nečtou ze souboru."""
+
+    def _engine(self, **opts):
+        from nokturno_core.lib.store import Store
+        e = Engine({"media_hints": True, **opts}, tempfile.mkdtemp(), shared_store=Store(tempfile.mkdtemp()))
+        e.resolve = lambda url, prefer_external=False: "http://x/" + url
+        return e
+
+    def test_trefa_ze_serveru_nahradi_cteni_souboru(self):
+        from nokturno_core import engine as engine_mod
+        e = self._engine()
+        e.dash.media = lambda idents: {"ws:abc": {"audio": [{"lang": "cs"}], "height": 1080, "size": 5}}
+        cteni = []
+        puvodni = engine_mod.probe_media
+        engine_mod.probe_media = lambda url: cteni.append(url) or {"audio": [{"lang": "en"}], "height": 720, "size": 1}
+        try:
+            e._media_hints(["ws:abc", "ws:xyz", "pt:1:s:h", None])
+            self.assertEqual(e._media_from_file("ws:abc")["height"], 1080)   # ze serveru
+            self.assertEqual(e._media_from_file("ws:xyz")["height"], 720)    # přečteno
+            self.assertEqual(cteni, ["http://x/ws:xyz"])
+            self.assertIn("hlavičky ze serveru", e.last_timings)
+        finally:
+            engine_mod.probe_media = puvodni
+
+    def test_bez_volby_se_server_nepta(self):
+        e = self._engine(media_hints=False)
+        volani = []
+        e.dash.media = lambda idents: volani.append(idents) or {}
+        e._media_hints(["ws:abc"])
+        self.assertEqual(volani, [])
+
+    def test_pta_se_jen_na_sdilene_a_nezname(self):
+        e = self._engine()
+        e.shared.cached_if("media:ws:znamy", 3600, lambda: {"height": 480}, fresh=True)
+        volani = []
+        e.dash.media = lambda idents: volani.append(list(idents)) or {}
+        e._media_hints(["ws:znamy", "ws:novy", "pt:1:s:h", "dav:0:/x", "ws:novy"])
+        self.assertEqual(volani, [["ws:novy"]])
