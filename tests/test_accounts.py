@@ -15,7 +15,14 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import urllib.error  # noqa: E402
+
+from nokturno_core import engine as engine_mod  # noqa: E402
 from nokturno_core.lib import accounts, hellspy_api  # noqa: E402
+from nokturno_core.lib.cztor_api import CztorError  # noqa: E402
+from nokturno_core.lib.fastshare_api import FastshareError  # noqa: E402
+from nokturno_core.lib.sledujteto_api import SledujtetoError  # noqa: E402
+from nokturno_core.lib.webshare_api import WebshareApiError, WebshareError  # noqa: E402
 from nokturno_core import Engine  # noqa: E402
 from nokturno_core.lib.store import Store  # noqa: E402
 
@@ -239,3 +246,38 @@ class TestEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestKodUcetSelhani(unittest.TestCase):
+    """Výpadek sítě není odmítnuté heslo. Uživatel měl 2026-09-21 v menu čtyři zdroje
+    v chybě („nesedí jméno nebo heslo" u WebShare i Sledujteta), přitom „Ověřit zdroje"
+    hned nato hlásilo všechno v pořádku: obnova na pozadí padla na vypnutou síť
+    a zapsala se jako `bad_login`, a ten záznam pak platil dvanáct hodin."""
+
+    def test_sit_je_unreachable(self):
+        for chyba in (urllib.error.URLError("timed out"), OSError("Network is unreachable")):
+            with self.subTest(chyba=type(chyba).__name__):
+                try:
+                    raise WebshareError("login: chyba") from chyba
+                except WebshareError as err:
+                    self.assertEqual(engine_mod._account_fail_code(err), "unreachable")
+
+    def test_odmitnuty_ucet_je_bad_login(self):
+        self.assertEqual(engine_mod._account_fail_code(WebshareApiError("login: Špatné heslo")), "bad_login")
+
+    def test_sledujteto_podle_toho_kdo_odpovedel(self):
+        self.assertEqual(engine_mod._account_fail_code(SledujtetoError("HTTP 401", status=401)), "bad_login")
+        try:
+            raise SledujtetoError("timed out") from urllib.error.URLError("timed out")
+        except SledujtetoError as err:
+            self.assertEqual(engine_mod._account_fail_code(err), "unreachable")
+
+    def test_http_chyba_uvnitr_je_odpoved_serveru(self):
+        """`HTTPError` je podtřída `URLError` — pořadí testů v `_server_odpovedel` rozhoduje."""
+        try:
+            raise FastshareError("login selhal") from urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+        except FastshareError as err:
+            self.assertEqual(engine_mod._account_fail_code(err), "bad_login")
+
+    def test_bez_priciny_zustava_bad_login(self):
+        self.assertEqual(engine_mod._account_fail_code(CztorError("účet neaktivní")), "bad_login")
