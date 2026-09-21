@@ -173,36 +173,53 @@ disku by jeden o pauze druhého nevěděl.
 
 ## Přehraj.to (`lib/prehrajto_api.py`, 2026-09-21)
 
-Osmý zdroj. Vlastní rozhraní nemá — `/api/*` vrací 404, takže se čtou tytéž
-stránky jako v prohlížeči (`/hledej/<text>`, `/<slug>/<hash>`). Totéž dělá
-oficiální doplněk pro Kodi `plugin.video.prehrajto` 2.0.5.
+Osmý zdroj. Server má **dvě rozhraní** a modul podle účtu volí mezi nimi:
 
-**Účet je nepovinný a mění výsledek, ne jen rychlost.** Bez něj server vydá jen
-první stranu hledání (dál chce přihlášení) a stránka videa nabídne překódované
-1080p a 720p. S Premium účtem se stránkuje a `?do=download` vydá **původní
-soubor**, tedy i 4K a HDR. Proto je e-mail účtu součástí otisku v klíči cache
-streamů a velikost z výpisu (patří originálu) se bez účtu neukazuje.
+- **JSON API `https://prehrajto.cz/api/v2/`** (doména `.cz`) — používá ho oficiální
+  appka pro Android `to.prehraj.app` (rozebráno z APK 1.0.60). Každý dotaz chce
+  `Authorization: Bearer <JWT>`; **anonymní token server nevydává** (žádný guest
+  endpoint), takže bez účtu je API nepoužitelné (401 „Missing access token"). Token
+  je tentýž JWT, který web ukládá do cookie `access_token` po přihlášení — bere se
+  z relace založené `login()` a obnovuje se, jakmile vyprší (platí ~10 min, web ho
+  na `GET /` vydá znovu z cookie `refresh_token`).
+- **HTML `https://prehraj.to/`** — tytéž stránky jako prohlížeč (`/hledej/<text>`,
+  `/<slug>/<hash>`, `?do=download`), stejně čte i cizí doplněk `plugin.video.prehrajto`
+  2.0.5.
 
-Podepsaný odkaz CDN **nedrží na IP**, umí `Range` a nechce hlavičky ani cookie —
-hraje tedy i v Stremiu a ve stahování, na rozdíl od FastShare. Platí zhruba den,
-dohledává se až při přehrání (`pt:<slug>:<hash>`). Slug v odkazu musí sedět:
-stránka videa ho ignoruje, ale `?do=download` na cizím slugu odkaz nevydá.
+**S účtem se jede přes JSON API**, protože je lepší v každém ohledu: stránkování
+`offset`, hlasy i titulky rovnou ve výsledku hledání, přímý odkaz na **původní
+soubor** jedním dotazem (`videos/{id}/download`), a hlavně **bez plovoucí 429** —
+40 souběžných hledání prošlo, kdežto HTML scraping dostával 429 už od ~20 (změřeno
+živě). **Bez účtu se čte HTML** (jediná možná cesta) — první strana hledání (32
+položek), přehraje se překódované 1080p, žádný originál. E-mail účtu je proto
+součástí otisku v klíči cache streamů a velikost z výpisu (patří originálu) se bez
+účtu neukazuje.
 
-Dvě vlastnosti serveru:
+Odkaz nese id, slug i hash: **`pt:<id>:<slug>:<hash>`**. Id potřebuje JSON API pro
+download; slug a hash je adresa stránky videa pro HTML zálohu. Starší tvar bez id
+(`pt:<slug>:<hash>`, z HTML výpisu bez účtu) se čte dál — jede jen HTML cestou.
+Podepsaný odkaz CDN (`premiumcdn.net`) **nedrží na IP** (ověřeno ze dvou sítí), umí
+`Range` a nechce hlavičky ani cookie — hraje v Kodi, v Stremiu i ve stahování, na
+rozdíl od FastShare. Platí zhruba den, dohledává se až při přehrání.
 
-- **HTTP 429** s plovoucím limitem — dvacet dotazů v dávce prošlo, dvanáct po
-  1,5 s ne. Po první 429 se zdroj na `RATE_LIMIT_COOLDOWN` (10 min) přeskakuje,
-  pauza je na disku jako u HellSpy (v Kodi je plugin jiný proces než služba).
+Vlastnost serveru, se kterou je nutné počítat:
+
+- **HTTP 429** na HTML má plovoucí limit (dvacet dotazů v dávce prošlo, dvanáct po
+  1,5 s ne); **JSON API tenhle strop nemá**. Po první 429 odkudkoli se zdroj celému
+  procesu přeskočí na `RATE_LIMIT_COOLDOWN` (10 min), pauza je na disku jako u HellSpy
+  (v Kodi je plugin jiný proces než služba). HTML dotazy jdou navíc po `MIN_GAP`
+  (`_wait_for_slot`) za sebou; JSON dotazy tuhle frontu nedrží.
 - **Prázdná odpověď na některé dotazy.** `okresni prebor` vrátí nulu, `prebor
-  okresni` i `okresni prebo` plnou stranu. Vada jejich indexu u konkrétního
-  řetězce; jádro zkouší víc variant názvu, takže se přes to obvykle přenese samo.
+  okresni` plnou stranu. Vada jejich indexu; jádro zkouší víc variant názvu, takže se
+  přes to obvykle přenese samo.
 
 Přihlášení se ukládá (`SESSION_TTL` 6 h): každé zakládá na serveru záznam
 v „Správě přihlášených zařízení" a tarif mluví o pěti zařízeních.
 
-Titulky ze stránky (`pts:<slug>:<hash>:<pořadí>`, `tracks()`) jsou hotové
-a otestované, ale do výpisu streamů se zatím nepřipínají — stálo by to jeden
-dotaz na stránku u každého streamu a to je proti limitu 429 moc.
+Titulky: s účtem jdou rovnou z JSON API (`videos/{id}` i `videos/search` je nesou
+inline, `tracks()` je vrátí bez dotazu navíc), bez účtu z HTML stránky. Do výpisu
+streamů se zatím nepřipínají — podepsaná `.vtt` platí jen den, takže se do
+cachovaného streamu uložit nesmí; dohledávají se až při přehrání (`pts:<id>:<slug>:<hash>:<pořadí>`).
 
 ## CZtor (`lib/cztor_api.py`, 2026-09-19)
 
