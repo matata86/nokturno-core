@@ -310,6 +310,62 @@ class TestPauzaPo429(unittest.TestCase):
         self.assertEqual(api.dotazy, [])
 
 
+class TestFrontaDotazu(unittest.TestCase):
+    """Náhodný titul a zahřívání katalogu hledají víc titulů naráz; server dal 429 všem."""
+
+    def setUp(self):
+        self._old = (pt_api.MIN_GAP, pt_api.MAX_QUEUE_WAIT, pt_api._next_slot)
+        pt_api._next_slot = 0.0
+        pt_api._blocked_until = 0.0
+
+    def tearDown(self):
+        pt_api.MIN_GAP, pt_api.MAX_QUEUE_WAIT, pt_api._next_slot = self._old
+        pt_api._blocked_until = 0.0
+
+    def test_dotazy_z_vice_vlaken_jdou_za_sebou(self):
+        import threading
+        pt_api.MIN_GAP, pt_api.MAX_QUEUE_WAIT = 0.2, 5.0
+        casy = []
+        api = PrehrajtoApi("", "")
+        api._open = lambda *a, **k: (casy.append(time.time()), _Odpoved())[1]
+        vlakna = [threading.Thread(target=api._page, args=("/x",)) for _ in range(4)]
+        for v in vlakna:
+            v.start()
+        for v in vlakna:
+            v.join()
+        casy.sort()
+        self.assertEqual(len(casy), 4)
+        for a, b in zip(casy, casy[1:]):
+            self.assertGreaterEqual(b - a, 0.15)
+
+    def test_dlouha_fronta_dotaz_vynecha_bez_ucasti_serveru(self):
+        pt_api.MIN_GAP, pt_api.MAX_QUEUE_WAIT = 10.0, 1.0
+        api = PrehrajtoApi("", "")
+        api._open = lambda *a, **k: _Odpoved()
+        api._page("/x")                     # obsadí termín
+        with self.assertRaises(PrehrajtoError) as ctx:
+            api._page("/y")
+        self.assertTrue(ctx.exception.paused)
+        self.assertNotIsInstance(ctx.exception, PrehrajtoRateLimited)
+
+    def test_429_behem_cekani_ve_fronte_dotaz_zastavi(self):
+        pt_api.MIN_GAP, pt_api.MAX_QUEUE_WAIT = 0.05, 5.0
+        api = PrehrajtoApi("", "")
+        api._open = lambda *a, **k: _Odpoved()
+        orig = api._wait_for_slot
+        api._wait_for_slot = lambda: (orig(), pt_api._note_block(None))[0]
+        with self.assertRaises(PrehrajtoRateLimited):
+            api._page("/x")
+
+
+class _Odpoved:
+    def read(self):
+        return b"<html></html>"
+
+    def close(self):
+        pass
+
+
 class TestStavUctu(unittest.TestCase):
     def setUp(self):
         pt_api._blocked_until = 0.0
