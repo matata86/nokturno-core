@@ -94,6 +94,32 @@ class TestGather(unittest.TestCase):
         self.assertLess(len(done), 20)
         pool.shutdown(wait=True)
 
+    def test_on_done_muze_ukoncit_cekani_drive(self):
+        """Vrátí-li `on_done` pravdu, `gather()` skončí — bez `Aborted`, nezačaté úlohy
+        se zruší a na pomalou rozběhnutou se nečeká. Jediný pracovník: po rychlé úloze
+        se pustí do pomalé (nezávisle na `gather()`), ale na `nezacaty` ve frontě
+        se ještě nedostal, a ta se tedy dá zrušit."""
+        release = threading.Event()
+        started_slow = threading.Event()
+        pool = ThreadPoolExecutor(max_workers=1)
+        fast = pool.submit(lambda: "rychlý")
+
+        def slow_job():
+            started_slow.set()
+            release.wait(5)
+            return "pomalý"
+        slow = pool.submit(slow_job)
+        nezacaty = pool.submit(lambda: "nikdy")
+        t0 = time.time()
+        out = abort.gather(pool, [fast, slow, nezacaty], abort.never,
+                            on_done=lambda f: f is fast, poll=0.05)
+        self.assertLess(time.time() - t0, 1.0, "nesmí čekat na pomalou úlohu")
+        self.assertEqual(out, [fast, slow, nezacaty])
+        self.assertTrue(fast.done())
+        self.assertTrue(nezacaty.cancelled())
+        release.set()
+        pool.shutdown(wait=True)
+
 
 class TestEngine(unittest.TestCase):
     def setUp(self):
