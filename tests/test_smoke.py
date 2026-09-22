@@ -1551,10 +1551,12 @@ class TestOpravyZAuditu(unittest.TestCase):
             with self.assertRaises(NokturnoError) as ctx:
                 engine.resolve("streamuj:https://www.streamuj.tv/x")
             self.assertIn("Sosáč", str(ctx.exception))
-            self.assertEqual(engine._media_from_file("streamuj:https://www.streamuj.tv/x"), {})
+            # `resolve()` selhal → soubor teď nejde přehrát, `_media_from_file` to označí
+            # jako `unreachable` (2026-09-22, detekce nedostupných streamů), ne jako {}
+            self.assertEqual(engine._media_from_file("streamuj:https://www.streamuj.tv/x"), {"unreachable": True})
             # ani jiná chyba při čtení hlavičky (rozbitý soubor, síť) nesmí z loaderu vylétnout
             engine.resolve = lambda url: (_ for _ in ()).throw(RuntimeError("cokoli"))
-            self.assertEqual(engine._media_from_file("ws:abc"), {})
+            self.assertEqual(engine._media_from_file("ws:abc"), {"unreachable": True})
             streams = [{"url": "ws:abc", "label": "a.mkv", "detail": "1 GB", "source": "ws"}]
             self.assertEqual(engine._fill_audio(list(streams)), streams)
 
@@ -1601,6 +1603,11 @@ class TestOpravyZAuditu(unittest.TestCase):
                 self.assertEqual(engine._media_from_file("ws:x")["size"], 0)
                 cache = pathlib.Path(tmp) / "cache"
                 self.assertEqual([p.name for p in cache.glob("*.json")] if cache.exists() else [], [])
+                # výše selhalo čtení hlavičky bez Range, což hostitele (stejný 127.0.0.1
+                # jako `/range` — port do `deadhost.host_of()` nepočítá) na 10 minut uspí;
+                # tenhle test ale zkouší jen ukládání do cache, ne uspávání hostitelů
+                from nokturno_core.lib import deadhost
+                deadhost.clear(engine.store)
                 engine.resolve = lambda url: f"{base}/range"
                 engine._media_from_file("ws:y")
                 self.assertEqual(len(list(cache.glob("*.json"))), 1, "skutečně přečtená hlavička se pamatuje")
@@ -2586,3 +2593,129 @@ class TestZamekCekajiciDostanouNeuspech(unittest.TestCase):
         # po rozchodu všech se neúspěch nedrží: další volání zkusí znovu
         self.assertEqual(store.cached_if("k", 60, lambda: {"ok": True}, ok=lambda d: d.get("ok")), {"ok": True})
         self.assertEqual(len(volani), 1)
+
+
+class TestNedostupneStreamy(unittest.TestCase):
+    """Detekce nedostupných streamů (2026-09-22): měřeno živě, ze 30 nejpopulárnějších
+    filmů Sosáče jich šlo přehrát jen 6 (20 %) — soubory leží na serverech, z nichž
+    třetina nebere spojení. `_fill_audio()` už dnes čte hlavičku každého streamu, jen
+    selhání zahazovala; teď se zapíše jako `_dead` a `_drop_dead()`/`raw_streams(strict=)`
+    takový stream ze seznamu vyřadí."""
+
+    def test_fill_audio_oznaci_jen_unreachable(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            vysledky = {"ws:1": {"unreachable": True}, "ws:2": {}, "ws:3": None}
+            engine._media_from_file = lambda url: vysledky[url]
+            streams_ = [{"url": "ws:1", "label": "a", "detail": "1 GB"},
+                        {"url": "ws:2", "label": "b", "detail": "1 GB"},
+                        {"url": "ws:3", "label": "c", "detail": "1 GB"}]
+            # `_media_from_file` běží ve vlákně přes `gather()` — `None` simuluje
+            # nedočtenou hlavičku (`results.get(id(s))` bez záznamu), ne `{}` napřímo
+            with mock.patch.object(engine, "_media_from_file", side_effect=lambda u: vysledky[u]):
+                out = engine._fill_audio(list(streams_))
+            self.assertTrue(out[0].get("_dead"))
+            self.assertFalse(out[1].get("_dead"))
+            self.assertFalse(out[2].get("_dead"), "nedočtené v PROBE_DEADLINE není totéž co mrtvé")
+
+    def test_drop_dead_vyradi_jen_oznacene(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            zive = {"url": "ws:1"}
+            mrtve = {"url": "ws:2", "_dead": True}
+            self.assertEqual(engine._drop_dead([zive, mrtve]), [zive])
+            self.assertEqual(engine.last_timings["nedostupné"], 1)
+            # jsou-li mrtvé všechny, vrátí se seznam beze změny — lepší nejspíš
+            # nefunkční výpis než žádný (uživatel bez sítě)
+            self.assertEqual(engine._drop_dead([mrtve]), [mrtve])
+
+    def test_strict_vyradi_mrtvy_stream_uvolneny_ne(self):
+        """`raw_streams(strict=False)` je „Zobrazit všechny streamy" — tam má být vidět
+        i to, co `strict=True` skrylo."""
+        engine = Engine({}, tempfile.mkdtemp())
+        engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError("není nastaven"))
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Film", "year": 2020}, None)
+        engine._cross_streams = lambda *a, **k: []
+        engine._hellspy_streams = lambda *a, **k: []
+        engine._webshare_subtitles = lambda *a, **k: []
+
+        def zive_a_mrtvy(*a, **k):
+            return [{"url": "ws:zivy", "label": "Film.2020.1080p.mkv", "detail": "4 GB", "source": "ws"},
+                    {"url": "ws:mrtvy", "label": "Film.2020.720p.mkv", "detail": "2 GB", "source": "ws"}]
+        engine._webshare_streams = zive_a_mrtvy
+
+        def media(url):
+            return {"unreachable": True} if url == "ws:mrtvy" else {}
+        engine._media_from_file = media
+
+        strict = engine.raw_streams("movie", "tt1", strict=True)
+        self.assertEqual([s["url"] for s in strict], ["ws:zivy"])
+        uvolnene = engine.raw_streams("movie", "tt1", strict=False)
+        self.assertEqual({s["url"] for s in uvolnene}, {"ws:zivy", "ws:mrtvy"})
+
+    def test_druhy_stream_na_stejnem_hostiteli_se_neprobuje_znovu(self):
+        """Po `mark_dead` se u dalšího streamu ze stejného hostitele hlavička vůbec
+        nečte (`probe_media` se nevolá) — právě to šetří timeouty u titulu s víc
+        streamy ze stejného mrtvého serveru."""
+        from unittest import mock
+        from nokturno_core.lib import deadhost
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({}, tmp)
+            deadhost.clear(engine.store)
+            volani = []
+
+            def resolve(url):
+                return f"http://s42.streamuj.tv/{url}"
+            engine.resolve = resolve
+
+            def probe(url):
+                volani.append(url)
+                return {"unreachable": True}
+            with mock.patch("nokturno_core.engine.probe_media", side_effect=probe):
+                first = engine._media_from_file("streamuj:1")
+                second = engine._media_from_file("streamuj:2")
+            self.assertEqual(first, {"unreachable": True})
+            self.assertEqual(second, {"unreachable": True})
+            self.assertEqual(len(volani), 1, "druhý stream nesmí hostitele probouzet znovu")
+            deadhost.clear(engine.store)
+
+
+class TestUspaniZdrojeVEnginu(unittest.TestCase):
+    """Ručně uspaný zdroj (menu „Uspat zdroj") se v `raw_streams()` vůbec nezkouší —
+    ani se to nepočítá jako výpadek (`failures`), je to volba uživatele."""
+
+    def _engine(self, tmp):
+        engine = Engine({}, tmp)
+        engine.api_for = lambda item_id: (_ for _ in ()).throw(NokturnoError("není nastaven"))
+        engine.meta = lambda ctype, item_id, series_id=None: ({"id": item_id, "name": "Film", "year": 2020}, None)
+        engine._cross_streams = lambda *a, **k: []
+        engine._fill_audio = lambda streams, *a, **k: streams
+        engine._hellspy_streams = lambda *a, **k: []
+        engine._webshare_subtitles = lambda *a, **k: []
+        return engine
+
+    def test_sosac_ma_radek_ve_stavu_zdroju_aby_sel_uspat(self):
+        """Uspat jde jen zdroj, který má řádek ve Stavu zdrojů — a právě Sosáč
+        byl ten, kvůli kterému uspání vzniklo (2026-09-22: hratelných 20 % titulů).
+        Stav se u něj skládá bez jediného dotazu na síť."""
+        from nokturno_core.lib import accounts
+        self.assertIn("sosac", accounts.SOURCES)
+        self.assertEqual(accounts.sosac()["level"], accounts.OK)
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine({"streamuj_username": "kdo", "streamuj_password": "co"}, tmp)
+            self.assertIn("sosac", engine._account_checks())
+            # bez účtu Streamuj Sosáč streamy nevydá vůbec, tak ať se ani nehlásí
+            self.assertNotIn("sosac", Engine({}, tmp)._account_checks())
+
+    def test_uspany_zdroj_se_nevola_a_nejde_do_failures(self):
+        from nokturno_core.lib import accounts
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            volano = []
+            engine._webshare_streams = lambda *a, **k: (volano.append(1), [])[1]
+            accounts.pause(engine.store, "webshare", 600)
+            failures = []
+            engine.raw_streams("movie", "tt1", failures=failures)
+            self.assertEqual(volano, [], "uspaný zdroj se nesmí vůbec zkusit")
+            self.assertNotIn("WebShare", [label for label, _e in failures])

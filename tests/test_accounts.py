@@ -340,3 +340,28 @@ class TestKodUcetSelhani(unittest.TestCase):
 
     def test_bez_priciny_zustava_bad_login(self):
         self.assertEqual(engine_mod._account_fail_code(CztorError("účet neaktivní")), "bad_login")
+
+
+class TestRucniUspaniZdroje(unittest.TestCase):
+    """Menu „Uspat zdroj" (2026-09-22) — `accounts.pause()`/`paused_for()`/`paused()`,
+    nezávislé na automatické pauze HellSpy po 429."""
+
+    def test_zapsani_vyprseni_a_zruseni(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(tmp)
+            self.assertEqual(accounts.paused_for(store, "webshare"), 0)
+            accounts.pause(store, "webshare", 600)
+            self.assertGreater(accounts.paused_for(store, "webshare"), 0)
+            self.assertIn("webshare", accounts.paused(store))
+            accounts.pause(store, "webshare", 0)
+            self.assertEqual(accounts.paused_for(store, "webshare"), 0)
+            self.assertNotIn("webshare", accounts.paused(store))
+
+    def test_vyprsele_se_nehlasi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(tmp)
+            with mock.patch("time.time", return_value=1000.0):
+                accounts.pause(store, "hellspy", 10)
+            with mock.patch("time.time", return_value=1020.0):
+                self.assertEqual(accounts.paused_for(store, "hellspy"), 0)
+                self.assertEqual(accounts.paused(store), {})
