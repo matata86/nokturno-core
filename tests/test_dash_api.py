@@ -281,3 +281,31 @@ class TestKoncerty(unittest.TestCase):
         self.assertEqual([f["ref"] for f in data["concerts"][0]["files"]], ["ws:abc", "hs:1:h"])
         self.assertIsNone(self.api.concert_artist("1", ["webshare"]))
         self.assertIsNone(self.api.concert_artist(-1, ["webshare"]))
+
+
+POLOZKY = {"version": 1, "total": 2, "skip": 0, "items": [
+    {"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare", "napster"]},
+    {"id": "x", "artist": "Nic", "title": "Nic"},
+]}
+KONCERT = {"version": 1, "id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "files": [
+    {"source": "webshare", "ref": "ws:abc", "name": "pulse.mkv", "size": 5, "duration": 60},
+    {"source": "webshare", "ref": "javascript:alert(1)", "name": "x"},
+]}
+
+
+class TestKoncertyPloche(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(tempfile.mkdtemp())
+        self.api = DashApi(cache=self.store)
+
+    def test_polozky_a_detail(self):
+        sit = Sit({"/concerts/items": POLOZKY, "/concerts/item/7": KONCERT})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            items, total = self.api.concert_items(["webshare"], search="pul", skip=0)
+            data = self.api.concert(7, ["webshare"])
+            self.assertIsNone(self.api.concert("7", ["webshare"]))
+        self.assertEqual(total, 2)
+        self.assertEqual(items, [{"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare"]}])
+        self.assertIn("search=pul", sit.volani[0])
+        self.assertEqual([f["ref"] for f in data["files"]], ["ws:abc"])
+        self.assertEqual(data["title"], "Pulse")

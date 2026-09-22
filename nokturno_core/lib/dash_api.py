@@ -346,6 +346,56 @@ class DashApi:
         artist = data.get("artist") if isinstance(data.get("artist"), dict) else {}
         return {"artist": _text(artist.get("name"), MAX_TITLE), "concerts": concerts}
 
+    def concert_items(self, sources, search="", skip=0):
+        """Plochý seznam koncertů napříč interprety (`GET /concerts/items`) — pro klienta bez
+        hierarchie (Stremio). Bez souborů; ty dá `concert()`. Vrací (položky, celkem)."""
+        srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
+        search = " ".join(str(search or "").split())[:80]
+        skip = max(0, int(skip or 0))
+
+        def fetch():
+            data = self._get("/concerts/items", sources=srcs, search=search, skip=skip)
+            return data if isinstance(data, dict) and isinstance(data.get("items"), list) else None
+
+        data = self._load(f"nokturno:dash:concerts:items:{srcs}:{search}:{skip}", CONCERTS_TTL, fetch)
+        if not data:
+            return [], 0
+        out = []
+        for i in data["items"]:
+            if not (isinstance(i, dict) and isinstance(i.get("id"), int) and i["id"] > 0):
+                continue
+            artist, title = _text(i.get("artist"), MAX_TITLE), _text(i.get("title"), 200)
+            if artist and title:
+                out.append({"id": i["id"], "artist": artist, "title": title,
+                            "year": i.get("year") if isinstance(i.get("year"), int) else None,
+                            "sources": [s for s in (i.get("sources") or []) if s in CONCERT_SOURCES]})
+        return out, int(data.get("total") or 0)
+
+    def concert(self, concert_id, sources):
+        """Jeden koncert se soubory (`GET /concerts/item/{id}`), stejná kontrola odkazů
+        jako u `concert_artist()`."""
+        if not isinstance(concert_id, int) or concert_id <= 0:
+            return None
+        srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
+
+        def fetch():
+            data = self._get(f"/concerts/item/{concert_id}", sources=srcs)
+            return data if isinstance(data, dict) and isinstance(data.get("files"), list) else None
+
+        data = self._load(f"nokturno:dash:concert:{concert_id}:{srcs}", CONCERTS_TTL, fetch)
+        if not data:
+            return None
+        files = [{"source": f["source"], "ref": f["ref"], "name": _text(f.get("name"), 200),
+                  "size": int(f.get("size") or 0), "duration": int(f.get("duration") or 0)}
+                 for f in data["files"] if isinstance(f, dict)
+                 and f.get("source") in CONCERT_SOURCES and isinstance(f.get("ref"), str)
+                 and CONCERT_REF_RE.match(f["ref"])]
+        artist, title = _text(data.get("artist"), MAX_TITLE), _text(data.get("title"), 200)
+        if not (files and artist and title):
+            return None
+        return {"id": concert_id, "artist": artist, "title": title,
+                "year": data.get("year") if isinstance(data.get("year"), int) else None, "files": files}
+
 
 if __name__ == "__main__":
     import sys
