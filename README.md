@@ -2,7 +2,8 @@
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-podpo%C5%99%20autora-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/matata86) [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
 
-Sdílené jádro Nokturna. Hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, CZtoru, Luně
+Sdílené jádro Nokturna. Přehrávání vlastního úložiště (WebDAV/NAS) je hlavní funkce; volitelně
+navíc hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, CZtoru, Luně
 a na trackerech přes Prowlarr, k tomu titulky z OpenSubtitles — bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
