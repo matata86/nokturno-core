@@ -239,3 +239,45 @@ class TestMediaHlavicky(unittest.TestCase):
     def test_404_je_vypnuta_funkce(self):
         with mock.patch.object(urllib.request, "urlopen", Sit({"/media": urllib.error.HTTPError("u", 404, "x", {}, None)})):
             self.assertEqual(self.api.media(["ws:abc"]), {})
+
+
+KONCERTY = {"version": 1, "artists": [
+    {"id": 1, "name": "Pink Floyd", "concerts": 42},
+    {"id": "x", "name": "rozbité"},
+    {"id": 2, "name": "", "concerts": 1},
+]}
+INTERPRET = {"version": 1, "artist": {"id": 1, "name": "Pink Floyd"}, "concerts": [
+    {"title": "Live in Venice", "year": 1989, "files": [
+        {"source": "webshare", "ref": "ws:abc", "name": "PF Venice.avi", "size": 1000, "duration": 0},
+        {"source": "hellspy", "ref": "hs:1:h", "name": "x", "size": 5},
+        {"source": "napster", "ref": "np:1", "name": "cizí zdroj"},
+        {"source": "webshare", "ref": "javascript:alert(1)", "name": "špatný odkaz"},
+    ]},
+    {"title": "Bez souborů", "year": None, "files": []},
+    "smetí",
+]}
+
+
+class TestKoncerty(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(tempfile.mkdtemp())
+        self.api = DashApi(cache=self.store)
+
+    def test_interpreti_jen_platni_a_zdroje_v_klici(self):
+        sit = Sit({"/concerts?": KONCERTY, "/concerts": KONCERTY})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            rows = self.api.concerts(["hellspy", "webshare", "napster"])
+            self.api.concerts(["webshare", "hellspy"])           # stejná sada → cache
+            self.api.concerts(["hellspy"])                       # jiná sada → nový dotaz
+        self.assertEqual(rows, [{"id": 1, "name": "Pink Floyd", "concerts": 42}])
+        self.assertEqual(len(sit.volani), 2)
+        self.assertIn("sources=hellspy%2Cwebshare", sit.volani[0])
+
+    def test_interpret_jen_zname_odkazy(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/concerts/1": INTERPRET})):
+            data = self.api.concert_artist(1, ["webshare", "hellspy"])
+        self.assertEqual(data["artist"], "Pink Floyd")
+        self.assertEqual([c["title"] for c in data["concerts"]], ["Live in Venice"])
+        self.assertEqual([f["ref"] for f in data["concerts"][0]["files"]], ["ws:abc", "hs:1:h"])
+        self.assertIsNone(self.api.concert_artist("1", ["webshare"]))
+        self.assertIsNone(self.api.concert_artist(-1, ["webshare"]))
