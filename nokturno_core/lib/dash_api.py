@@ -298,15 +298,17 @@ class DashApi:
 
     # --- koncerty --------------------------------------------------------------------
 
-    def concerts(self, sources):
+    def concerts(self, sources, install=""):
         """Interpreti s koncerty v zapnutých zdrojích (`GET /concerts?sources=`). Server
         klíčuje koncert názvem, ne IMDb id, a soubor nese hotový vnitřní odkaz
         (`ws:`/`hs:`/`fs:`), který klient rovnou předá `Engine.resolve()`. Zdroje jdou do
-        klíče cache — jiná sada zapnutých zdrojů = jiný seznam."""
+        klíče cache — jiná sada zapnutých zdrojů = jiný seznam. `install` (id instalace
+        ze statistik) posílá klient kvůli zkušebnímu provozu: server smí katalog vydat
+        jen vybraným instalacím, ostatním odpoví 404 (= None, nic se necachuje)."""
         srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
 
         def fetch():
-            data = self._get("/concerts", sources=srcs)
+            data = self._get("/concerts", sources=srcs, install=install)
             return data.get("artists") if isinstance(data, dict) and isinstance(data.get("artists"), list) else None
 
         out = []
@@ -317,14 +319,14 @@ class DashApi:
                     out.append({"id": a["id"], "name": name, "concerts": int(a.get("concerts") or 0)})
         return out
 
-    def concert_artist(self, artist_id, sources):
+    def concert_artist(self, artist_id, sources, install=""):
         """Koncerty jednoho interpreta i se soubory — jen odkazy známého tvaru."""
         if not isinstance(artist_id, int) or artist_id <= 0:
             return None
         srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
 
         def fetch():
-            data = self._get(f"/concerts/{artist_id}", sources=srcs)
+            data = self._get(f"/concerts/{artist_id}", sources=srcs, install=install)
             return data if isinstance(data, dict) and isinstance(data.get("concerts"), list) else None
 
         data = self._load(f"nokturno:dash:concerts:{artist_id}:{srcs}", CONCERTS_TTL, fetch)
@@ -346,7 +348,7 @@ class DashApi:
         artist = data.get("artist") if isinstance(data.get("artist"), dict) else {}
         return {"artist": _text(artist.get("name"), MAX_TITLE), "concerts": concerts}
 
-    def concert_items(self, sources, search="", skip=0):
+    def concert_items(self, sources, search="", skip=0, install=""):
         """Plochý seznam koncertů napříč interprety (`GET /concerts/items`) — pro klienta bez
         hierarchie (Stremio). Bez souborů; ty dá `concert()`. Vrací (položky, celkem)."""
         srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
@@ -354,7 +356,7 @@ class DashApi:
         skip = max(0, int(skip or 0))
 
         def fetch():
-            data = self._get("/concerts/items", sources=srcs, search=search, skip=skip)
+            data = self._get("/concerts/items", sources=srcs, search=search, skip=skip, install=install)
             return data if isinstance(data, dict) and isinstance(data.get("items"), list) else None
 
         data = self._load(f"nokturno:dash:concerts:items:{srcs}:{search}:{skip}", CONCERTS_TTL, fetch)
@@ -371,7 +373,7 @@ class DashApi:
                             "sources": [s for s in (i.get("sources") or []) if s in CONCERT_SOURCES]})
         return out, int(data.get("total") or 0)
 
-    def concert(self, concert_id, sources):
+    def concert(self, concert_id, sources, install=""):
         """Jeden koncert se soubory (`GET /concerts/item/{id}`), stejná kontrola odkazů
         jako u `concert_artist()`."""
         if not isinstance(concert_id, int) or concert_id <= 0:
@@ -379,7 +381,7 @@ class DashApi:
         srcs = ",".join(sorted(s for s in sources if s in CONCERT_SOURCES))
 
         def fetch():
-            data = self._get(f"/concerts/item/{concert_id}", sources=srcs)
+            data = self._get(f"/concerts/item/{concert_id}", sources=srcs, install=install)
             return data if isinstance(data, dict) and isinstance(data.get("files"), list) else None
 
         data = self._load(f"nokturno:dash:concert:{concert_id}:{srcs}", CONCERTS_TTL, fetch)
