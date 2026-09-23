@@ -57,7 +57,7 @@ class TestPauzaPoSpatnemHesle(unittest.TestCase):
         try:
             with self.assertRaises(SledujtetoError):
                 SledujtetoApi("a@b.cz", "heslo", cache=self.store).login()
-            self.assertFalse(badlogin.paused("sledujteto", "a@b.cz", "heslo", self.store))
+            self.assertFalse(badlogin.login_paused("sledujteto", "a@b.cz", "heslo", self.store))
         finally:
             SledujtetoApi._request = puvodni
 

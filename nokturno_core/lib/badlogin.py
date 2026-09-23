@@ -23,7 +23,7 @@ def _key(source, login, password):
     return f"{source}:{digest}"
 
 
-def paused(source, login, password, cache=None):
+def login_paused(source, login, password, cache=None):
     """True = tyhle údaje zdroj nedávno odmítl, znovu se nepřihlašovat."""
     key = _key(source, login, password)
     until = _memory.get(key, 0.0)
@@ -35,7 +35,7 @@ def paused(source, login, password, cache=None):
     return until > time.time()
 
 
-def mark(source, login, password, cache=None):
+def mark_bad_login(source, login, password, cache=None):
     """Zapíše odmítnuté přihlášení."""
     key = _key(source, login, password)
     now = time.time()

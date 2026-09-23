@@ -46,7 +46,7 @@ class SledujtetoError(Exception):
 
 
 from .streams import human_size  # noqa: F401
-from . import badlogin
+from .badlogin import login_paused, mark_bad_login
 
 
 def _duration(text):
@@ -199,7 +199,7 @@ class SledujtetoApi:
     def login(self):
         if not self.email or not self.password:
             raise SledujtetoError("účet není vyplněný")
-        if badlogin.paused("sledujteto", self.email, self.password, self.cache):
+        if login_paused("sledujteto", self.email, self.password, self.cache):
             err = SledujtetoError(ERROR_TEXTS["invalid_credentials"], code="invalid_credentials", status=401)
             err.paused = True
             raise err
@@ -207,7 +207,7 @@ class SledujtetoApi:
             resp = self._request("POST", "v1/token", {"email": self.email, "password": self.password})
         except SledujtetoError as err:
             if err.code == "invalid_credentials":
-                badlogin.mark("sledujteto", self.email, self.password, self.cache)
+                mark_bad_login("sledujteto", self.email, self.password, self.cache)
             raise
         inner = resp.get("data") or {}
         token = inner.get("token")

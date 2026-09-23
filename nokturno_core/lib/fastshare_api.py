@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import badlogin
+from .badlogin import login_paused, mark_bad_login
 from .streams import human_size
 
 API = "https://fastshare.cz/api/api_kodi.php"
@@ -136,7 +136,7 @@ class FastshareApi:
         """{"hash", "unlimited", "credit_mb"} — přihlásí se vždy znovu a výsledek si uloží."""
         if not self.login_name or not self.password:
             raise FastshareError("účet není vyplněný")
-        if badlogin.paused("fastshare", self.login_name, self.password, self.cache):
+        if login_paused("fastshare", self.login_name, self.password, self.cache):
             err = FastshareError("přihlášení se nepovedlo — zkontroluj jméno a heslo", status=401)
             err.paused = True
             raise err
@@ -144,7 +144,7 @@ class FastshareApi:
             user = (self._get(process="login", login=self.login_name, password=self.password) or {}).get("user") or {}
         except FastshareError as err:
             if err.status in (401, 403):
-                badlogin.mark("fastshare", self.login_name, self.password, self.cache)
+                mark_bad_login("fastshare", self.login_name, self.password, self.cache)
             raise
         if not user.get("hash"):
             raise FastshareError("přihlášení nevrátilo hash")
