@@ -76,7 +76,7 @@ class Hub(object):
         coord = sw.Coordinator(player, name, leader, self.clock,
                                publish=lambda state, mid=mid: self._put(mid, state),
                                publish_me=lambda me, mid=mid: self.me.__setitem__(mid, me),
-                               notify=notes.append)
+                               notify=lambda code, **kw: notes.append(sw.notice_text(code, **kw)))
         coord.mid = mid
         coord.notes = notes
         self.nodes.append(coord)
@@ -205,7 +205,7 @@ class TestSkupina(unittest.TestCase):
         hub.deliver()
         for node in (leader, a, b):
             self.assertFalse(node.player.playing(), node.name)
-        self.assertTrue(any("Ložnice dal pauzu" in n for n in a.notes))
+        self.assertTrue(any("Ložnice: pauza" in n for n in a.notes))
         # ozvěna: přehrávač u ostatních pošle vlastní „paused" — nesmí se vrátit jako nový příkaz
         seq = hub.seq
         a.on_local("paused")

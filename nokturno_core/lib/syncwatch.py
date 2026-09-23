@@ -277,6 +277,33 @@ class Client(object):
 
 # --- logika synchronizace ----------------------------------------------------------------
 
+# Hlášky, které `Coordinator` posílá přes `notify(kód, **údaje)`, s českým textem jako
+# zálohou. Větve si je překládají samy; `who` je jméno zařízení, které akci udělalo.
+NOTICES = {
+    "paused_all": "Pauza pro všechny",
+    "paused": "%(who)s: pauza",
+    "played": "%(who)s: přehrávání pokračuje",
+    "seeked": "%(who)s: přetočeno na %(pos)s",
+    "buffering": "%(who)s: načítá se, čekáme",
+    "stopped": "%(who)s: přehrávání skončilo",
+    "loading": "Spouštím: %(title)s",
+    "waiting_others": "Čekám, až se stream načte u ostatních…",
+    "started_without": "Pouštím bez: %(names)s",
+    "load_failed": "Stream se nepodařilo spustit",
+    "other_version": "Hraješ jinou verzi — časy nemusí přesně sedět",
+    "detached": "Hraješ něco jiného — skupina čeká na další titul od vedoucího",
+    "not_shareable": "Tohle se ostatním pustit nedá (není to titul z Nokturna)",
+}
+
+
+def notice_text(code, template=None, **kw):
+    """Text hlášky; `template` = přeložená šablona větve (se `%(who)s` a spol.)."""
+    try:
+        return (template or NOTICES.get(code, code)) % kw
+    except (KeyError, TypeError, ValueError):
+        return NOTICES.get(code, code) % kw if code in NOTICES else code
+
+
 class Coordinator(object):
     """Srovnává místní přehrávač se stavem skupiny. Nezná síť ani Kodi.
 
@@ -292,7 +319,9 @@ class Coordinator(object):
         self.clock = clock              # Clock
         self.publish = publish          # dict -> seq
         self.publish_me = publish_me    # dict -> None
-        self.notify = notify or (lambda text: None)
+        # notify(kód, **údaje) — text si skládá každá větev sama (Kodi má čtyři jazyky); kódy
+        # a údaje jsou v `NOTICES`
+        self.notify = notify or (lambda code, **kw: None)
         self.status = status or (lambda info: None)
         self.mid = 0
         self.state = None               # poslední známý stav skupiny
@@ -307,6 +336,8 @@ class Coordinator(object):
         self.cache_since = 0.0
         self.wait_since = 0.0           # vedoucí: od kdy čeká na načtení ostatních
         self.last_me = None
+        self.expires = None             # s do zániku skupiny, když není připojené žádné další zařízení
+        self.locked = False
 
     # -- pomocné
 
@@ -351,6 +382,8 @@ class Coordinator(object):
 
     def on_poll(self, resp):
         self.members = resp.get("members") or []
+        self.expires = resp.get("expires")
+        self.locked = bool(resp.get("locked"))
         state = resp.get("state")
         if state and state.get("seq", 0) > (self.state or {}).get("seq", -1):
             old = self.state
@@ -376,7 +409,7 @@ class Coordinator(object):
             return
         if kind == "paused":
             self._publish("pause", False, cur)
-            self.notify("Pauza pro všechny")
+            self.notify("paused_all")
         elif kind == "resumed":
             self._publish("play", True, cur)
         elif kind == "seek":
@@ -389,7 +422,7 @@ class Coordinator(object):
             if now - self.load_started > LOAD_TIMEOUT:
                 self.loading = None
                 self.detached = True
-                self.notify("Stream se nepodařilo spustit")
+                self.notify("load_failed")
                 self._me()
             return
         if self.leader and st.get("phase") == "loading" and st.get("load"):
@@ -427,7 +460,7 @@ class Coordinator(object):
             total = float(item.get("total") or 0)
             want = float(((st.get("load") or {}).get("total")) or 0)
             if total and want and abs(total - want) / want > 0.01:
-                self.notify("Hraješ jinou verzi — časy nemusí přesně sedět")
+                self.notify("other_version")
             if st.get("phase") == "live" and st.get("playing"):
                 self.player.seek(self.target())
             else:
@@ -443,11 +476,11 @@ class Coordinator(object):
                 self._set(self.state)
             else:
                 self.detached = True
-                self.notify("Hraješ něco jiného — skupina čeká na další titul od vedoucího")
+                self.notify("detached")
             self._me()
             return
         if not valid_replay(replay):
-            self.notify("Tohle se ostatním pustit nedá (není to titul z Nokturna)")
+            self.notify("not_shareable")
             return
         load = {"lid": os.urandom(4).hex(), "replay": replay, "title": item.get("title") or "",
                 "total": float(item.get("total") or 0)}
@@ -459,7 +492,7 @@ class Coordinator(object):
         self.wait_since = self.now()
         self._publish("load", False, cur, load=load, phase="loading")
         self._me()
-        self.notify("Čekám, až se stream načte u ostatních…")
+        self.notify("waiting_others")
 
     def _leader_wait(self):
         lid = self.lid()
@@ -475,7 +508,7 @@ class Coordinator(object):
         self.player.resume()
         self._publish("start", True, cur, phase="live")
         if waiting:
-            self.notify("Pouštím bez: " + ", ".join(m.get("name") or "?" for m in waiting))
+            self.notify("started_without", names=", ".join(m.get("name") or "?" for m in waiting))
 
     def _local_stopped(self):
         # Kodi posílá zastavení starého souboru i po startu nového (přepnutí titulu) —
@@ -497,7 +530,7 @@ class Coordinator(object):
             if old_lid and not self.detached:
                 self._echo()
                 self.player.stop()
-                self.notify("%s ukončil přehrávání" % who)
+                self.notify("stopped", who=who)
             self.ready = ""
             return
         if new_lid != old_lid or (self.detached and new.get("why") == "load"):
@@ -508,7 +541,7 @@ class Coordinator(object):
             self.load_started = self.now()
             self.detached = False
             self.ready = ""
-            self.notify("Spouštím: %s" % ((new.get("load") or {}).get("title") or "stream"))
+            self.notify("loading", title=(new.get("load") or {}).get("title") or "")
             self.player.load(with_sw(replay))
             self._me()
             return
@@ -516,13 +549,13 @@ class Coordinator(object):
             return
         why = new.get("why")
         if why == "pause":
-            self.notify("%s dal pauzu" % who)
+            self.notify("paused", who=who)
         elif why == "play" and not (old or {}).get("playing"):
-            self.notify("%s spustil přehrávání" % who)
+            self.notify("played", who=who)
         elif why == "seek":
-            self.notify("%s přetočil na %s" % (who, clock_text(new.get("pos"))))
+            self.notify("seeked", who=who, pos=clock_text(new.get("pos")))
         elif why == "buffer":
-            self.notify("Čekáme na %s (načítá)" % who)
+            self.notify("buffering", who=who)
         self._set(new)
 
     def _set(self, state):
@@ -570,11 +603,12 @@ class Coordinator(object):
         """Stav pro okna pluginu (vlastnost okna)."""
         st = self.state or {}
         load = st.get("load") or {}
-        return {"members": [{"name": m.get("name") or "?", "leader": m.get("leader"),
+        return {"members": [{"name": m.get("name") or "?", "leader": m.get("leader"), "you": m.get("mid") == self.mid,
                              "online": m.get("online"), "st": m.get("st")} for m in self.members],
                 "title": load.get("title") or "", "phase": st.get("phase") or "",
                 "playing": bool(st.get("playing")), "loaded": bool(load.get("lid")),
-                "leader": self.leader}
+                "leader": self.leader, "expires": self.expires, "locked": self.locked,
+                "loading": bool(self.loading), "detached": self.detached}
 
 
 def clock_text(seconds):
