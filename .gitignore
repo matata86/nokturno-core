@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# pracovní stromy jiných session (git worktree) — nikdy nepatří do indexu
+wt-*/
