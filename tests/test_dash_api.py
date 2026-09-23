@@ -5,12 +5,14 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from nokturno_core.lib import servers  # noqa: E402
 from nokturno_core.lib.dash_api import DOWN_KEY, DashApi  # noqa: E402
 from nokturno_core.lib.store import Store                 # noqa: E402
 from nokturno_core.lib.tmdb_api import TmdbApi            # noqa: E402
@@ -51,7 +53,7 @@ class Sit:
     def __call__(self, req, timeout=None):
         self.volani.append(req.full_url)
         for prefix, odpoved in self.odpovedi.items():
-            if req.full_url.split("nokturno.tailf0014.ts.net", 1)[1].startswith(prefix):
+            if urllib.parse.urlsplit(req.full_url).path.startswith(prefix):
                 if isinstance(odpoved, Exception):
                     raise odpoved
                 return Resp(odpoved)
@@ -89,7 +91,8 @@ class TestMenu(unittest.TestCase):
             with mock.patch.object(urllib.request, "urlopen", spadla):
                 self.assertEqual(len(self.api.menu()), 2)
                 self.assertEqual(len(self.api.menu()), 2)
-            self.assertEqual(len(spadla.volani), 1, "po výpadku se síť pět minut nezkouší")
+            self.assertEqual(len(spadla.volani), len(servers.BASES),
+                             "po výpadku (obě adresy serveru) se síť pět minut nezkouší")
         self.assertIsNotNone(self.store.peek_cached(DOWN_KEY, 300))
 
     def test_bez_dat_a_bez_site_prazdno(self):

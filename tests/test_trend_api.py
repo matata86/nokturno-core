@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from nokturno_core.lib import servers  # noqa: E402
 from nokturno_core.lib.trend_api import CATALOG_ID, TrendApi, TrendApiError  # noqa: E402
 
 
@@ -114,7 +115,9 @@ class TestTrendApi(unittest.TestCase):
             TrendApi(cache=cache).catalog("movie", CATALOG_ID)
             TrendApi(cache=cache).catalog("series", CATALOG_ID)
             TrendApi(cache=cache).catalog("movie", CATALOG_ID)
-        self.assertEqual(len(pokusy), 1, f"po prvním výpadku se nemá volat znovu: {pokusy}")
+        # jedno kolo = pokus na každou známou adresu serveru (`lib/servers.py`)
+        self.assertEqual(len(pokusy), len(servers.BASES),
+                         f"po prvním výpadku se nemá volat znovu: {pokusy}")
 
     def test_pri_vypadku_se_ukazou_starsi_data(self):
         body = json.dumps({"items": [{"id": "tt1", "name": "X"}]}).encode("utf-8")
