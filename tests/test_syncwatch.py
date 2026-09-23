@@ -291,6 +291,34 @@ class TestSkupina(unittest.TestCase):
         self.assertIsNone(a.player.pos)
         self.assertIsNone(b.player.pos)
 
+    def test_clen_zastavi_a_vrati_se(self):
+        hub, leader, a, b = group()
+        start_title(hub, leader, [a, b])
+        hub.run(30)
+        a.player.stop()
+        a.on_local("stopped")
+        hub.deliver()
+        self.assertTrue(leader.player.playing(), "skupina sleduje dál")
+        self.assertTrue(a.detached)
+        self.assertTrue(any("Vrátit se" in n for n in a.notes))
+        hub.run(20)
+        loads = len(a.player.loads)
+        a.on_local("rejoin")
+        self.assertEqual(len(a.player.loads), loads + 1)
+        self.assertTrue(a.player.loads[-1].endswith("&sw=1"))
+        a.on_local("started", item=a.player.start(0.0, replay=a.player.loads[-1]))
+        hub.deliver()
+        self.assertFalse(a.detached)
+        self.assertAlmostEqual(a.player.pos, leader.player.pos, delta=sw.TOLERANCE)
+        self.assertTrue(a.player.playing())
+
+    def test_vedouci_se_nevraci(self):
+        hub, leader, a, b = group()
+        start_title(hub, leader, [a, b])
+        loads = len(leader.player.loads)
+        leader.on_local("rejoin")
+        self.assertEqual(len(leader.player.loads), loads)
+
     def test_zastaveni_stareho_po_startu_noveho_neni_konec(self):
         hub, leader, a, b = group()
         start_title(hub, leader, [a, b])
