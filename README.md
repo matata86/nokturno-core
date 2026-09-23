@@ -564,6 +564,24 @@ revize, čas a blob. **Žádnou vazbu na `install_id` ze statistik** — jinak b
 spárovat anonymní hlášení s konkrétní domácností a celá anonymita statistik by
 padla. Zařízení, které se dlouho neozve, se maže i s blobem.
 
+## SyncWatch — společné sledování (`lib/syncwatch.py`, 2026-09-23)
+
+Synchronizace přehrávání víc zařízení přes slepý server dashboardu (`/syncwatch/*`).
+Kód skupiny `SW-XXXX-XXXX` (8 znaků Crockford Base32) dává přes `sealbox`
+(sůl `nokturno-syncwatch-v1`) identitu skupiny pro hlavičku a klíč, kterým se pečetí
+stav přehrávání (`load`, `playing`, `pos`, `phase`) i záznam člena (`name`, `ready`, `buf`).
+Server razí `at`/`seq`/`by`, cílová pozice je `pos + (server_now − at)` při přehrávání.
+
+- `Client` — create/join/state/me/lock/leave/poll (long-poll 25 s), `Closed` při 410.
+- `Coordinator` — čistá logika bez sítě a bez Kodi (testy simulují skupinu v paměti):
+  jen vedoucí načítá titul, vedoucí čeká na připravenost členů (nejvýš `START_WAIT`),
+  pauza/play/přetočení od kohokoli, potlačení ozvěny, srovnání odchylky nad `TOLERANCE`,
+  čekání na bufferujícího, pozdní příchozí naskočí.
+- `Runtime` — vlákno pollu a vlákno práce nad `Coordinator`, pro službu hostitele.
+- `valid_replay()` pustí jen adresy `plugin://plugin.video.nokturno/` s akcemi přehrání —
+  podvržený stav skupiny nespustí nic jiného.
+- Hlášky jako kódy (`NOTICES`, `notice_text()`), texty si překládá větev.
+
 ## Sdílené soubory a zámek (od 6.2.1)
 
 `Store` drží data v JSON souborech, na které sahá víc procesů najednou: doplněk v Kodi
