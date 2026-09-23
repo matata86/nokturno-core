@@ -344,6 +344,7 @@ class TestNovePridaneKoncerty(unittest.TestCase):
             data = api.concert_recent(["webshare"], install="abc")
         self.assertEqual([(c["artist"], c["title"], [f["ref"] for f in c["files"]]) for c in data],
                          [("Queen", "Live At Wembley", ["ws:q1"])])
+        self.assertEqual(data[0]["id"], 3, "Stremio skládá z id `nktc:<id>`")
 
     def test_starsi_server_bez_cesty(self):
         api = DashApi(cache=Store(tempfile.mkdtemp()))
