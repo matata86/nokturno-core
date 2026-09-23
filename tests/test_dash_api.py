@@ -95,6 +95,37 @@ class TestMenu(unittest.TestCase):
                              "po výpadku (obě adresy serveru) se síť pět minut nezkouší")
         self.assertIsNotNone(self.store.peek_cached(DOWN_KEY, 300))
 
+    def test_znacka_vypadku_neumlci_dotaz_bez_zalohy(self):
+        """Značka výpadku smí ušetřit čekání jen tam, kde je co ukázat místo toho.
+        Kodi na Androidu po startu chvíli nemá síť, zahřívání tam narazí a značka pak
+        pět minut umlčela i výpisy otevřené rukou — 2026-09-23 to stálo celý rozcestník
+        koncertů, i když síť mezitím dávno byla."""
+        with mock.patch.object(urllib.request, "urlopen",
+                               Sit({"/catalogs": urllib.error.URLError("bez site")})):
+            self.assertEqual(self.api.menu(), [])          # nastaví značku výpadku
+        self.assertIsNotNone(self.store.peek_cached(DOWN_KEY, 300))
+
+        # jiná cesta, pro kterou klient nikdy nic neměl: musí se zkusit i teď
+        zdrava = Sit({"/concerts/groups": {"version": 1, "artists": 2,
+                                           "genres": [{"name": "rock", "artists": 2}],
+                                           "letters": [{"name": "P", "artists": 2}]}})
+        with mock.patch.object(urllib.request, "urlopen", zdrava):
+            skupiny = self.api.concert_groups(("webshare",))
+        self.assertEqual(len(zdrava.volani), 1, "bez záložních dat se síť zkusit musí")
+        self.assertEqual(skupiny["genres"], [{"name": "rock", "artists": 2}])
+
+    def test_znacka_vypadku_setri_cekani_tam_kde_je_zaloha(self):
+        """Opak předchozího: se starými daty v ruce se na timeout nečeká."""
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/catalogs": MENU})):
+            self.api.menu()
+        with mock.patch("nokturno_core.lib.dash_api.MENU_TTL", 0):
+            spadla = Sit({"/catalogs": urllib.error.URLError("timeout")})
+            with mock.patch.object(urllib.request, "urlopen", spadla):
+                self.assertEqual(len(self.api.menu()), 2)   # stará data
+                pokusy = len(spadla.volani)
+                self.assertEqual(len(self.api.menu()), 2)
+                self.assertEqual(len(spadla.volani), pokusy, "podruhé se síť nezkouší")
+
     def test_bez_dat_a_bez_site_prazdno(self):
         with mock.patch.object(urllib.request, "urlopen", Sit({"/catalogs": urllib.error.URLError("x")})):
             self.assertEqual(self.api.menu(), [])
