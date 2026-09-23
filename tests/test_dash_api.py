@@ -272,7 +272,8 @@ class TestKoncerty(unittest.TestCase):
             rows = self.api.concerts(["hellspy", "webshare", "napster"])
             self.api.concerts(["webshare", "hellspy"])           # stejná sada → cache
             self.api.concerts(["hellspy"])                       # jiná sada → nový dotaz
-        self.assertEqual(rows, [{"id": 1, "name": "Pink Floyd", "concerts": 42}])
+        self.assertEqual(rows, [{"id": 1, "name": "Pink Floyd", "concerts": 42,
+                                 "genres": [], "letter": ""}])
         self.assertEqual(len(sit.volani), 2)
         self.assertIn("sources=hellspy%2Cwebshare", sit.volani[0])
 
