@@ -71,6 +71,22 @@ class TestDveAdresy(unittest.TestCase):
             servers.urlopen(req, timeout=5)
         self.assertEqual(videno, {"metoda": "POST", "data": b'{"a":1}', "agent": "Nokturno"})
 
+    def test_bez_user_agenta_dostane_nokturno(self):
+        # Cloudflare výchozí `Python-urllib/3.x` odmítá s 403 (error 1010) — synchronizace
+        # a přenos nastavení hlavičku nenastavovaly a od 2026-09-23 neprošly
+        videno = {}
+
+        def fake(req, timeout=None):
+            videno["agent"] = req.get_header("User-agent")
+            return Resp(req.full_url)
+
+        with mock.patch("urllib.request.urlopen", fake):
+            servers.urlopen(urllib.request.Request(servers.BASES[0] + "/sync", method="PUT"), timeout=5)
+        self.assertEqual(videno["agent"], "Nokturno")
+        with mock.patch("urllib.request.urlopen", fake):
+            servers.urlopen(servers.BASES[0] + "/trending", timeout=5)
+        self.assertEqual(videno["agent"], "Nokturno")
+
     def test_odpoved_serveru_druhou_adresu_nezkousi(self):
         volano = []
 
