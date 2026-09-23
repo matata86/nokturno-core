@@ -328,6 +328,29 @@ KONCERT = {"version": 1, "id": 7, "artist": "Pink Floyd", "title": "Pulse", "yea
 ]}
 
 
+NOVE = {"version": 1, "concerts": [
+    {"id": 3, "artist": "Queen", "title": "Live At Wembley", "year": 1986, "files": [
+        {"source": "webshare", "ref": "ws:q1", "name": "wembley.mkv", "size": 5},
+        {"source": "webshare", "ref": "file:///etc/passwd", "name": "x"}]},
+    {"id": 4, "artist": "", "title": "Bez interpreta", "files": [{"source": "webshare", "ref": "ws:x"}]},
+    {"id": 5, "artist": "Kabát", "title": "Jen zlý odkaz", "files": [{"source": "napster", "ref": "ws:y"}]},
+]}
+
+
+class TestNovePridaneKoncerty(unittest.TestCase):
+    def test_jen_platne_a_s_interpretem(self):
+        api = DashApi(cache=Store(tempfile.mkdtemp()))
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/concerts/recent": NOVE})):
+            data = api.concert_recent(["webshare"], install="abc")
+        self.assertEqual([(c["artist"], c["title"], [f["ref"] for f in c["files"]]) for c in data],
+                         [("Queen", "Live At Wembley", ["ws:q1"])])
+
+    def test_starsi_server_bez_cesty(self):
+        api = DashApi(cache=Store(tempfile.mkdtemp()))
+        with mock.patch.object(urllib.request, "urlopen", Sit({})):
+            self.assertEqual(api.concert_recent(["webshare"]), [])
+
+
 class TestKoncertyPloche(unittest.TestCase):
     def setUp(self):
         self.store = Store(tempfile.mkdtemp())
