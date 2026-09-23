@@ -3,6 +3,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -13,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from nokturno_core.lib import servers  # noqa: E402
-from nokturno_core.lib.dash_api import DOWN_KEY, DashApi  # noqa: E402
+from nokturno_core.lib.dash_api import DOWN_KEY, DashApi, since_midnight  # noqa: E402
 from nokturno_core.lib.store import Store                 # noqa: E402
 from nokturno_core.lib.tmdb_api import TmdbApi            # noqa: E402
 
@@ -78,6 +79,23 @@ class TestMenu(unittest.TestCase):
             self.assertEqual(self.api.catalogs("movie"), [
                 {"id": "harry-potter", "name": "Harry Potter", "search": False, "genre_required": False,
                  "genres": []}])
+
+    def test_menu_se_nedrzi_pres_pulnoc(self):
+        """Sezónní katalogy platí po dnech — menu z minulého dne se po půlnoci stáhne znovu."""
+        sit = Sit({"/catalogs": MENU})
+        with mock.patch.object(urllib.request, "urlopen", sit), \
+                mock.patch("nokturno_core.lib.dash_api.since_midnight", return_value=3600):
+            self.api.menu()
+            self.api.menu()
+        self.assertEqual(len(sit.volani), 1)
+        with mock.patch.object(urllib.request, "urlopen", sit), \
+                mock.patch("nokturno_core.lib.dash_api.since_midnight", return_value=0):
+            self.api.menu()
+        self.assertEqual(len(sit.volani), 2, "po půlnoci znovu ze serveru")
+
+    def test_since_midnight(self):
+        t = time.mktime((2026, 12, 24, 0, 0, 7, 0, 0, -1))
+        self.assertEqual(since_midnight(t), 7)
 
     def test_cache_a_vypadek_vrati_posledni_data_a_nezkousi_sit(self):
         sit = Sit({"/catalogs": MENU})
