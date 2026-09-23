@@ -319,11 +319,12 @@ class TestKoncerty(unittest.TestCase):
 
 
 POLOZKY = {"version": 1, "total": 2, "skip": 0, "items": [
-    {"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare", "napster"]},
+    {"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare", "napster"],
+     "img": "https://img/pulse.jpg"},
     {"id": "x", "artist": "Nic", "title": "Nic"},
 ]}
 KONCERT = {"version": 1, "id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "files": [
-    {"source": "webshare", "ref": "ws:abc", "name": "pulse.mkv", "size": 5, "duration": 60},
+    {"source": "webshare", "ref": "ws:abc", "name": "pulse.mkv", "size": 5, "duration": 60, "img": "special://x"},
     {"source": "webshare", "ref": "javascript:alert(1)", "name": "x"},
 ]}
 
@@ -364,7 +365,9 @@ class TestKoncertyPloche(unittest.TestCase):
             data = self.api.concert(7, ["webshare"])
             self.assertIsNone(self.api.concert("7", ["webshare"]))
         self.assertEqual(total, 2)
-        self.assertEqual(items, [{"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare"]}])
+        self.assertEqual(items, [{"id": 7, "artist": "Pink Floyd", "title": "Pulse", "year": 1994, "sources": ["webshare"],
+                                  "img": "https://img/pulse.jpg"}])
+        self.assertEqual(data["files"][0]["img"], "", "jen http(s) náhled")
         self.assertIn("search=pul", sit.volani[0])
         self.assertEqual([f["ref"] for f in data["files"]], ["ws:abc"])
         self.assertEqual(data["title"], "Pulse")
