@@ -1060,6 +1060,16 @@ class TestSledujteto(unittest.TestCase):
         api2.file_link("123")
         self.assertEqual(sum(1 for c in self.calls if c[1] == "v1/token"), 1)
 
+    def test_odkaz_streaming_na_download(self):
+        """`/streaming/` bez Range vrací 400, ExoPlayer ho při startu neposílá."""
+        def handler(method, path, auth, body):
+            if path == "v1/token":
+                return 200, {"data": {"token": "T"}}
+            return 200, {"data": {"link": "https://data10.sledujteto.com/api/v1/streaming/5/abc"}}
+        self._server(handler)
+        api = self.st.SledujtetoApi("a@b.cz", "tajne", cache=self.store)
+        self.assertEqual(api.file_link("5"), "https://data10.sledujteto.com/api/v1/download/5/abc")
+
     def test_po_401_se_prihlasi_znovu(self):
         tokens = iter(["STARY", "NOVY"])
         def handler(method, path, auth, body):
