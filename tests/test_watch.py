@@ -213,3 +213,26 @@ class TestStaraData(Base):
         self.assertEqual(sync.apply_changes(b, sync.collect_changes(self.store, 0)), 2)
         self.assertIn("tt9", watch.series(b))
         self.assertIn("tt5", watch.wanted(b))
+
+
+class TestCerstvost(Base):
+    def test_fresher_zkrati_platnost_jen_ve_svem_vlakne_a_klicich(self):
+        calls = []
+        load = lambda: calls.append(1) or {"x": 1}  # noqa: E731
+        self.store.cached("tmdb:meta3:tv:tt9", 3600, load)
+        self.store.cached("media:ws:1", 3600, load)
+        with self.store.fresher(0, watch.META_KEYS):
+            self.store.cached("tmdb:meta3:tv:tt9", 3600, load)
+            self.store.cached("media:ws:1", 3600, load)
+        self.store.cached("tmdb:meta3:tv:tt9", 3600, load)
+        self.assertEqual(len(calls), 3, "znovu jen metadata a jen uvnitř bloku")
+
+    def test_zkontrolovat_ted_bere_streamy_nove(self):
+        watch.want(self.store, "tt5")
+        eng = FakeEngine(available={"tt5"})
+        eng.store = self.store
+        seen = []
+        eng.streams_or_torrents = lambda *a: seen.append(self.store._local.cap) or [{"label": "x"}]
+        watch.check_wanted(eng, self.store, force=True)
+        self.assertEqual(seen[0][0], 0)
+        self.assertIn("streams", seen[0][1])
