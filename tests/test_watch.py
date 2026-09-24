@@ -202,3 +202,14 @@ class TestVypadek(Base):
         with unittest.mock.patch.object(self.store, "save") as save:
             watch.pending_notices(self.store)
         save.assert_not_called()
+
+
+class TestStaraData(Base):
+    def test_seznam_z_doby_pred_denikem_se_posle(self):
+        """HA před 8.3.0 měla watchlist.json a wantlist.json, ale žádný watchlog."""
+        self.store.save(watch.SERIES, {"tt9": {"id": "tt9", "title": "Seriál"}})
+        self.store.save(watch.WANTED, {"tt5": {"id": "tt5", "title": "Film", "type": "movie"}})
+        b = Store(tempfile.mkdtemp(dir=self.dir.name))
+        self.assertEqual(sync.apply_changes(b, sync.collect_changes(self.store, 0)), 2)
+        self.assertIn("tt9", watch.series(b))
+        self.assertIn("tt5", watch.wanted(b))
