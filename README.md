@@ -582,6 +582,32 @@ Server razí `at`/`seq`/`by`, cílová pozice je `pos + (server_now − at)` př
   podvržený stav skupiny nespustí nic jiného.
 - Hlášky jako kódy (`NOTICES`, `notice_text()`), texty si překládá větev.
 
+## Hlídání — nové díly a tituly bez streamu (`lib/watch.py`, 2026-09-24)
+
+Vzniklo v integraci pro Home Assistant (sledované seriály od 1.x, Hlídané a
+příznak „kontrolovat dál" od 5.2.x), od 8.3.0 je v jádru a používá ho i Kodi.
+
+- **Sledované seriály** (`watchlist.json`): nový díl se hlásí, až když má stream.
+  Kontrola jde od posledního dostupného dílu dopředu, díl bez data vydání se
+  nepočítá (`aired_episodes`) a mezeru uprostřed přeskočí `skip_gap_candidates`.
+  Nejvýš `BUDGET` (6) dotazů na seriál.
+- **Hlídané tituly** (`wantlist.json` = vlastní seznam, `trakt_list.json` = výsledky
+  kontroly i pro seznam z Traktu, `trakt_flags.json` = „kontrolovat dál"). Ozve se,
+  když se stream objeví nebo přibude. `q:<název>` hlídá titul, který zatím žádný
+  zdroj nezná. Když streamy „zmizí", výsledek se nepřepíše nulou — nejspíš výpadek sítě.
+- **Kdy se kontroluje:** seriál po `SERIES_EVERY` (6 h), titul po `WANTED_EVERY` (24 h),
+  vždy podle `checked_ts`, a ten jde synchronizací — kontrola z jiného zařízení se
+  počítá. `anything_due()` to zjistí bez sítě (služba v Kodi podle toho budí plugin).
+- **Oznámení** (`pending_notices`) si počítá každé zařízení samo a pamatuje si je
+  v `watch_notified.json` (nesynchronizuje se). Ozve se tak i nález, který přišel
+  synchronizací. Nález starší než 3 dny nebo bez času se jen poznamená.
+- **Synchronizace:** okruh `watchlist` (výchozí zapnutý), sekce `watchlist` ve
+  změnách. Deník `watchlog.json` (`{"s:<sid>"|"w:<wid>": {"on", "ts"}}`) jako
+  `favlog`; každý záznam nese celou položku, u titulu i výsledek kontroly a příznak.
+  Vyhrává novější `ts`, odebrání jde jako `on: False`. Seznam z Traktu se nepřenáší.
+  Výsledek kontroly se zapisuje do čerstvě načtené položky, aby nepřepsal zhasnutý
+  nový díl, který mezitím přišel odjinud.
+
 ## Sdílené soubory a zámek (od 6.2.1)
 
 `Store` drží data v JSON souborech, na které sahá víc procesů najednou: doplněk v Kodi
