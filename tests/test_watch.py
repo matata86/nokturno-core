@@ -4,6 +4,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -182,3 +183,22 @@ class TestSynchronizace(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVypadek(Base):
+    def test_vypadek_site_neprepise_nalez(self):
+        watch.want(self.store, "tt5")
+        watch.check_wanted(FakeEngine(), self.store)
+        watch.check_wanted(FakeEngine(available={"tt5"}), self.store, force=True)
+        watch.pending_notices(self.store)
+        watch.check_wanted(FakeEngine(), self.store, force=True)        # bez sítě
+        self.assertEqual(watch.results(self.store)["tt5"]["streams"], 1)
+        watch.check_wanted(FakeEngine(available={"tt5"}), self.store, force=True)
+        self.assertEqual(watch.pending_notices(self.store), [])
+
+    def test_oznameni_bez_zmeny_nezapisuje(self):
+        watch.watch_series(self.store, "tt9")
+        watch.pending_notices(self.store)
+        with unittest.mock.patch.object(self.store, "save") as save:
+            watch.pending_notices(self.store)
+        save.assert_not_called()
