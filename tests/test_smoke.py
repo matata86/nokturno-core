@@ -1152,6 +1152,15 @@ class TestSledujtetoMedia(unittest.TestCase):
             self.assertEqual(popis["audio"], [{"lang": "CZ", "channels": "5.1", "codec": "AC3"}])
             self.assertEqual(popis["channels"], {"CZ": "5.1"})
 
+    def test_stitek_fastshare_podle_uctu(self):
+        """Účet ze Sdilej.cz: stream se hlásí jako Sdilej.cz, ne FastShare (týž katalog)."""
+        stream = {"label": "Film.2020.1080p.CZ.mkv", "detail": "4.2 GB", "source": "fs",
+                  "url": "fs:1:4:100", "_direct": True}
+        for provider, stitek in (("", "FastShare"), ("sdilej", "Sdilej.cz")):
+            with tempfile.TemporaryDirectory() as tmp:
+                popis = Engine({"fs_provider": provider}, tmp)._describe(dict(stream), 0)
+                self.assertEqual(popis["source"], stitek)
+
 
 
 class TestFastshare(unittest.TestCase):
