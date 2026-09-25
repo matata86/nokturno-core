@@ -64,7 +64,7 @@ class TestPauzaPoSpatnemHesle(unittest.TestCase):
     def test_fastshare_se_se_spatnym_heslem_nehlasi_znovu(self):
         volani = []
 
-        def get(self, **params):
+        def get(self, api=None, **params):
             volani.append(params)
             raise FastshareError("přihlášení se nepovedlo", status=401)
 
