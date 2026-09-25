@@ -196,6 +196,34 @@ class TestStats(unittest.TestCase):
             self.assertEqual(self.stats.send("https://x/collect", version="3.1.9", product="kodi", ping=True), (True, ""))
         self.assertEqual(sent, ping)
 
+    def test_extra_i_udalost(self):
+        """Jak se doplněk aktualizuje (`extra`) jde v pingu i v plném hlášení; `send_event`
+        pošle jen id, událost, verzi a produkt a nesahá na plán dalšího hlášení."""
+        extra = {"updates": "auto", "origin": "zip"}
+        self.assertEqual(self.stats.ping_payload("8.2.1", "kodi", extra=extra)["origin"], "zip")
+        self.assertEqual(self.stats.payload("8.2.1", extra=extra)["updates"], "auto")
+        sent = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def getcode(self): return 200
+
+        import urllib.request
+        from unittest import mock
+        before = self.stats.data.get("next_try")
+        with mock.patch.object(urllib.request, "urlopen",
+                               lambda req, timeout=None: (sent.append(json.loads(req.data)), Resp())[1]):
+            self.assertTrue(self.stats.send_event("https://x/collect", "stop", "8.2.1", "kodi"))
+        self.assertEqual(set(sent[0]), {"id", "event", "version", "product"})
+        self.assertEqual(sent[0]["event"], "stop")
+        self.assertEqual(self.stats.data.get("next_try"), before)
+
+        def boom(req, timeout=None):
+            raise OSError("síť")
+        with mock.patch.object(urllib.request, "urlopen", boom):
+            self.assertFalse(self.stats.send_event("https://x/collect", "stop"))
+
     def test_note_play_bez_titulu_nespadne(self):
         """`title=""`/`year=None` je běžný stav (dohledání meta selhalo) — nesmí to shodit."""
         self.stats.note_play("sosacd_m_x")
