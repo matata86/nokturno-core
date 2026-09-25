@@ -2102,7 +2102,7 @@ class TestVykonJadra2(unittest.TestCase):
         brzda = threading.Event()
         puvodni = modul._lookup
 
-        def pomale(luna, store, ctype, meta):
+        def pomale(luna, store, ctype, meta, tmdb=None):
             volani.append(meta["imdb_id"])
             brzda.wait(1)
             return {"description": "popis"}
@@ -2144,7 +2144,7 @@ class TestVykonJadra2(unittest.TestCase):
         from nokturno_core.lib import enrich as modul
         meta = {"imdb_id": "tt1", "name": "Film", "description": "krátký popis ze Sosáče"}
         puvodni = modul._lookup
-        modul._lookup = lambda luna, store, ctype, m: {"imdbRating": 7.5}
+        modul._lookup = lambda luna, store, ctype, m, tmdb=None: {"imdbRating": 7.5}
         try:
             self.assertEqual(modul.enrich([meta], deadline=3), 1)
             self.assertEqual(meta["imdbRating"], 7.5)
