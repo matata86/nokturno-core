@@ -10,7 +10,7 @@ FastShare / Sdilej.cz, Přehraj.to, CZtor, Luna), titulky z OpenSubtitles a torr
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
 z `homeassistant`, což hlídá test.
 
-> **Patří k sobě:** nad tímhle jádrem stojí [**Nokturno pro Kodi**](https://github.com/matata86/plugin.video.nokturno), [**Nokturno pro Home Assistant**](https://github.com/matata86/nokturno-ha) a [**Nokturno pro Stremio**](https://github.com/matata86/nokturno-stremio) (i Nuvio) — tři samostatné doplňky nad stejnými zdroji.
+> **Patří k sobě:** nad tímhle jádrem stojí [**Nokturno pro Kodi**](https://github.com/matata86/plugin.video.nokturno), [**Nokturno pro Home Assistant**](https://github.com/matata86/nokturno-ha) a [**Nokturno pro Stremio**](https://github.com/matata86/nokturno-stremio) (i Nuvio) – tři samostatné doplňky nad stejnými zdroji.
 
 ## Kdo z toho žije
 
@@ -41,7 +41,7 @@ takže se mu relativní importy při zápisu zplošťují. Ostatní berou soubor
 python3 -m unittest discover -s tests -v
 ```
 
-Nesahají na síť. Ověřují tvar jádra a to, co na něm konzumenti vyžadují jmenovitě —
+Nesahají na síť. Ověřují tvar jádra a to, co na něm konzumenti vyžadují jmenovitě –
 tedy přesně věci, které se při rozesílání dají tiše rozbít.
 
 ## Struktura
@@ -91,7 +91,7 @@ spolkne holou IP i celou adresu ze `/setup` včetně tokenu.
 
 Proč je to potřeba: **manifest Luna vydá i pro neplatný token** (jen s výchozím
 nastavením), takže kontrola „přišel manifest = zdroj funguje" byla falešně zelená.
-Ověřit token jde jedině dotazem na streamy, a to na víc titulech — hlavní zdroj
+Ověřit token jde jedině dotazem na streamy, a to na víc titulech – hlavní zdroj
 Luny nemá všechno.
 
 ## Stav účtů napříč zdroji (`lib/accounts.py`, 2026-09-20)
@@ -102,7 +102,7 @@ sebe nerozezná: vypršelé předplatné WebShare, účet bez VIP (stahuje pár 
 pauza HellSpy po HTTP 429, Luna, která neběží, účet Sledujteto bez Premium,
 došlý kredit FastShare, nespárovaný CZtor.
 
-Modul vrací **kód příčiny a čísla, ne hotovou větu** — text si skládá každá
+Modul vrací **kód příčiny a čísla, ne hotovou větu** – text si skládá každá
 větev sama, protože Kodi ho potřebuje na jeden řádek menu a HA do atributů
 senzoru. Úrovně jsou `ok` / `warn` / `fail` / `off` (zdroj vypnutý schválně).
 
@@ -116,7 +116,7 @@ Klíčové je rozdělení na dvě metody:
 Menu se otevírá za 0,91 s (reuse invoker, 6.2.6) a to číslo se nesmí zhoršit,
 proto v cestě, kterou otevírá uživatel, není ani jedno čekání na odpověď.
 
-**Dotazů navíc je málo a jsou vzácné** — jeden na zdroj za `TTL`:
+**Dotazů navíc je málo a jsou vzácné** – jeden na zdroj za `TTL`:
 
 * **HellSpy se neptá nikdy.** Jen si přečte vlastní pauzu po 429.
 * **Co jádro zjistí při běžné práci, se zapíše rovnou** (`Engine._note_account`):
@@ -127,7 +127,7 @@ proto v cestě, kterou otevírá uživatel, není ani jedno čekání na odpově
   přihlášení, kterou stejně používá přehrávání.
 * Kontrola předplatného WebShare, která dřív běžela zvlášť (`SubscriptionChecker`
   v Kodi, `check_subscription` v HA), je teď jedním ze sedmi zdrojů v jedné
-  obnově — dotazů na WebShare tím nepřibylo.
+  obnově – dotazů na WebShare tím nepřibylo.
 
 `TTL` je 12 h, tedy **delší** než interval obnovy na pozadí (6 h). S obojím
 stejným by v menu stál stav trvale označený jako zastaralý.
@@ -143,26 +143,26 @@ Osmý zdroj. Server má **dvě rozhraní** a modul podle účtu volí mezi nimi:
 - **JSON API `https://prehrajto.cz/api/v2/`** (doména `.cz`). Každý dotaz chce
   `Authorization: Bearer <JWT>`; **anonymní token server nevydává** (žádný guest
   endpoint), takže bez účtu je API nepoužitelné (401 „Missing access token"). Token
-  je tentýž JWT, který web ukládá do cookie `access_token` po přihlášení — bere se
+  je tentýž JWT, který web ukládá do cookie `access_token` po přihlášení – bere se
   z relace založené `login()` a obnovuje se, jakmile vyprší (platí ~10 min, web ho
   na `GET /` vydá znovu z cookie `refresh_token`).
-- **HTML `https://prehraj.to/`** — tytéž stránky jako prohlížeč (`/hledej/<text>`,
+- **HTML `https://prehraj.to/`** – tytéž stránky jako prohlížeč (`/hledej/<text>`,
   `/<slug>/<hash>`, `?do=download`).
 
 **S účtem se jede přes JSON API**, protože je lepší v každém ohledu: stránkování
 `offset`, hlasy i titulky rovnou ve výsledku hledání, přímý odkaz na **původní
-soubor** jedním dotazem (`videos/{id}/download`), a hlavně **bez plovoucí 429** —
+soubor** jedním dotazem (`videos/{id}/download`), a hlavně **bez plovoucí 429** –
 40 souběžných hledání prošlo, kdežto HTML scraping dostával 429 už od ~20 (změřeno
-živě). **Bez účtu se čte HTML** (jediná možná cesta) — první strana hledání (32
+živě). **Bez účtu se čte HTML** (jediná možná cesta) – první strana hledání (32
 položek), přehraje se překódované 1080p, žádný originál. E-mail účtu je proto
 součástí otisku v klíči cache streamů a velikost z výpisu (patří originálu) se bez
 účtu neukazuje.
 
 Odkaz nese id, slug i hash: **`pt:<id>:<slug>:<hash>`**. Id potřebuje JSON API pro
 download; slug a hash je adresa stránky videa pro HTML zálohu. Starší tvar bez id
-(`pt:<slug>:<hash>`, z HTML výpisu bez účtu) se čte dál — jede jen HTML cestou.
+(`pt:<slug>:<hash>`, z HTML výpisu bez účtu) se čte dál – jede jen HTML cestou.
 Podepsaný odkaz CDN (`premiumcdn.net`) **nedrží na IP** (ověřeno ze dvou sítí), umí
-`Range` a nechce hlavičky ani cookie — hraje v Kodi, v Stremiu i ve stahování, na
+`Range` a nechce hlavičky ani cookie – hraje v Kodi, v Stremiu i ve stahování, na
 rozdíl od FastShare. Platí zhruba den, dohledává se až při přehrání.
 
 Vlastnost serveru, se kterou je nutné počítat:
@@ -181,7 +181,7 @@ v „Správě přihlášených zařízení" a tarif mluví o pěti zařízeních
 
 Titulky: s účtem jdou rovnou z JSON API (`videos/{id}` i `videos/search` je nesou
 inline, `tracks()` je vrátí bez dotazu navíc), bez účtu z HTML stránky. Do výpisu
-streamů se zatím nepřipínají — podepsaná `.vtt` platí jen den, takže se do
+streamů se zatím nepřipínají – podepsaná `.vtt` platí jen den, takže se do
 cachovaného streamu uložit nesmí; dohledávají se až při přehrání (`pts:<id>:<slug>:<hash>:<pořadí>`).
 
 ## CZtor (`lib/cztor_api.py`, 2026-09-19)
@@ -193,12 +193,12 @@ Sedmý zdroj: katalog na předplatné (cztor.com). Bez tokenu vrací API všechn
   spolu s `device_id`). Hostitel jen kreslí PIN a ptá se (Kodi `DialogProgress`,
   HA krok `cztor` v nastavení integrace).
 - **Obnovovací token se použitím mění** (starý pak vrací 401). Obnova běží pod zámkem
-  a před ní se relace čte znovu z disku — plugin a služba Kodi sdílejí jeden soubor
+  a před ní se relace čte znovu z disku – plugin a služba Kodi sdílejí jeden soubor
   a kdo přijde s už použitým tokenem, vezme ten nový místo zrušení párování.
   Zamítnutá obnova (401/403) párování zapomene → `NotPaired`.
 - **Párování titulu přes id.** Hledání je volný fulltext („Matrix" vrátí i Počátek),
   položky ale nesou `ids.imdb/tmdb/csfd`. Bez IMDb id (české seriály mívají jen ČSFD)
-  rozhoduje název: přesná shoda s rokem ±1, nebo podobnost ≥ 0,85 s přesným rokem —
+  rozhoduje název: přesná shoda s rokem ±1, nebo podobnost ≥ 0,85 s přesným rokem –
   CZtor ukazuje slovenské názvy („Okresný prebor"). Seriály rozdělené po sériích
   („Zrádci - Série 1") nesou `_split_season`.
 - **Do seznamu streamů jde jen odkaz** `cz:<m|e>:<id titulu/dílu>:<id streamu>`;
@@ -209,7 +209,7 @@ Sedmý zdroj: katalog na předplatné (cztor.com). Bez tokenu vrací API všechn
   nečte a kvalitu určuje skutečné rozlišení, ne název („1080p.UHD.BluRay" není 4K).
 - V enginu přepínač `cz_enabled` (`CONF_CZ_ENABLED`), zdroj běží souběžně s ostatními,
   `_merge_direct` ho k Luně nepřibaluje. Stav spárování (`sources()["cztor"]`) se zjistí
-  při založení enginu — HA čte `sources()` ze smyčky událostí, kam čtení souboru nepatří.
+  při založení enginu – HA čte `sources()` ze smyčky událostí, kam čtení souboru nepatří.
 - Stremio (od 8.4.0) páruje PINem ve formuláři; tokeny drží server zapečetěné klíčem,
   který je jen v adrese doplňku.
 
@@ -223,11 +223,11 @@ kód opíše z obrazovky a nastavení si vyzvedne.
 
     NKT-4F7K-2B9Q      8 znaků Crockford Base32, 40 bitů
 
-Server je slepý stejně jako u synchronizace — `ident` je z kódu odvozené
+Server je slepý stejně jako u synchronizace – `ident` je z kódu odvozené
 jednosměrně a blob bez kódu nikdo nerozluští. Přenos žije 15 minut a **jedno
 vyzvednutí ho smaže**. Krátký kód stačí právě proto, že hádat se dá jen přes
 server, a ten má strop pokusů na adresu (`Dashboard/backend/transfer.py`).
-Stejný blob jde místo na server uložit do souboru — formát je týž, kód je pořád
+Stejný blob jde místo na server uložit do souboru – formát je týž, kód je pořád
 potřeba.
 
 ### Co se přenáší
@@ -241,8 +241,8 @@ nové nastavení se přenáší samo. Odečte se `DENY`:
 | `download_dir` | cesta, která na druhém stroji nemusí existovat |
 | `sync_enabled`, `sync_url`, `sync_key` | synchronizace má vlastní párování; sdílený klíč by ze dvou zařízení udělal jedno |
 
-Mimo schéma (a tedy mimo přenos) zůstává všechno z profilu: `install_id` —
-jinak by se dvě zařízení slila v statistikách i v hlášeních o pádech — tokeny,
+Mimo schéma (a tedy mimo přenos) zůstává všechno z profilu: `install_id` –
+jinak by se dvě zařízení slila v statistikách i v hlášeních o pádech – tokeny,
 cache, oblíbené a rozkoukanost.
 
 ### Tokeny se nekopírují, ale nezapomínají
@@ -251,20 +251,20 @@ CZtor mění obnovovací token při každém použití, takže kopie na druhé z
 by **odhlásila to původní**; token Traktu je vázaný na zařízení. Přenos proto
 nese jen `flags` („tady byl zapnutý CZtor"), a cílové zařízení po importu rovnou
 nabídne párování PINem, respektive přihlášení k Traktu. Sdílené heslo WebShare
-naproti tomu jde přes přenos celé — je to prostý přístup k účtu, ne rotující
+naproti tomu jde přes přenos celé – je to prostý přístup k účtu, ne rotující
 token.
 
 ### Plán místo tichého přepisu
 
 `plan(payload, current, known)` rozdělí přenos na `changes` (zapíše se), `same`
-(už sedí), `unknown` (tohle zařízení ten klíč nezná — starší verze doplňku,
+(už sedí), `unknown` (tohle zařízení ten klíč nezná – starší verze doplňku,
 jiná větev rodiny) a `blocked` (`DENY`, kdyby přišel podvržený přenos). Klient
 podle toho ukáže, co se stane, ještě než na to sáhne, a před zápisem si odloží
 kopii `settings.xml`.
 
 ## „Pro Tebe“ (`lib/foryou.py`, 2026-09-20)
 
-Doporučení k tomu, co uživatel dokoukal naposledy. Modul sám nikam nechodí —
+Doporučení k tomu, co uživatel dokoukal naposledy. Modul sám nikam nechodí –
 dostane hotovou `similar_fn` (`TmdbApi.similar`, bez klíče TMDB
 `DashApi.similar`) a jen z ní skládá seznam, takže jde testovat bez sítě.
 
@@ -273,17 +273,17 @@ klíč `watched`); server ji nemá a mít nemá. Nový veřejný endpoint by za 
 zaplatil cizími účty na serveru, a přesně tuhle cestu odmítla 6.2.2 u jazykových
 katalogů.
 
-- `seed_ids(rows, ctype)` — vzory z `Store.recently_watched()`. Epizody se slijí
+- `seed_ids(rows, ctype)` – vzory z `Store.recently_watched()`. Epizody se slijí
   do jednoho seriálu, typ se pozná podle sezóny a dílu v klíči, id bez IMDb
   (soubory z úložiště, vlastní id Sosáče) vypadnou.
-- `recommend(seeds, similar_fn, skip=…)` — sloučení a řazení: napřed tituly,
+- `recommend(seeds, similar_fn, skip=…)` – sloučení a řazení: napřed tituly,
   které doporučuje víc vzorů, pak podle nejlepšího pořadí u některého z nich.
   Každá položka nese `_because` (id vzoru), ze kterého si klient udělá
   „Protože jsi viděl …“ podle vlastního snímku titulu, tedy bez dotazu navíc.
-- `genre_counts` / `pick_genre` — vážené losování žánru pro „Náhodný film“.
+- `genre_counts` / `pick_genre` – vážené losování žánru pro „Náhodný film“.
 
 Cena na TMDB (studeně, pět vzorů po dvanácti doporučeních): 2–3 dotazy na vzor
-s cache na 7 dní, k tomu detail na každý výsledný titul — ten má ale cache 30 dní
+s cache na 7 dní, k tomu detail na každý výsledný titul – ten má ale cache 30 dní
 a sdílí ji se všemi ostatními katalogy. Detail v `Kodi/dokumentace.md`.
 
 ## Titulky z OpenSubtitles (`lib/opensubtitles_api.py`, 2026-09-20)
@@ -291,7 +291,7 @@ a sdílí ji se všemi ostatními katalogy. Detail v `Kodi/dokumentace.md`.
 Druhý zdroj titulků vedle fulltextu WebShare. Měřeno na ostré cache Stremia
 (3 363 výpisů streamů): **36,7 %** titulů nemá žádné české ani slovenské titulky
 a **14,5 %** ani dabing, ani titulky. Hledání `.srt` na WebShare zachrání 6,9
-procentního bodu, zbytek zavírá tenhle zdroj — v aktuálním žebříčku má CZ nebo SK
+procentního bodu, zbytek zavírá tenhle zdroj – v aktuálním žebříčku má CZ nebo SK
 titulky 83 % filmů a 92 % seriálů, a jde skoro výhradně o lidské překlady
 (ve vzorku 109 lidských proti 7 strojovým).
 
@@ -300,33 +300,33 @@ titulky 83 % filmů a 92 % seriálů, a jde skoro výhradně o lidské překlady
 * **Klíč je povinný na každý dotaz.** Bez hlavičky `Api-Key` projde jen holé
   `?imdb_id=…`, a to jen když odpověď leží na CDN; `languages`, `query`,
   `moviehash` i `page` vracejí `403 {"message":"You cannot consume this service"}`.
-  Klíč je vázaný na aplikaci, ne na uživatele — rozdává ho dashboard přes
+  Klíč je vázaný na aplikaci, ne na uživatele – rozdává ho dashboard přes
   `GET /os-key` (`DashApi.opensubtitles_key()`), do repozitáře nesmí.
 * **Parametry musí být v dotazu seřazené abecedně**, jinak server odpoví `301` na
   kanonický tvar (drží si tím cache). Hlídá to test.
 * **Kvóta je na stahování, ne na hledání**: 5 souborů na IP za 24 h bez přihlášení,
   20 s běžným účtem, u VIP bez omezení. Hledat jde zadarmo (strop 5 dotazů za
-  sekundu). Proto se stahuje až při přehrání a nejvýš jeden titulek na titul —
+  sekundu). Proto se stahuje až při přehrání a nejvýš jeden titulek na titul –
   a proxovat to přes server nejde, kvóta se počítá na IP toho, kdo stahuje.
 * **Jazyky jsou ISO 639-1** (`cs`, `sk`), naše kódy jsou `CZ`/`SK`. Překlad se bere
-  z `tracks.LANG_CODES`, ať nevznikne druhá tabulka — bez něj se `cs` nepozná jako
+  z `tracks.LANG_CODES`, ať nevznikne druhá tabulka – bez něj se `cs` nepozná jako
   čeština a české titulky spadnou v pořadí za slovenské (chytil to test, ne provoz).
 
 ### Dvě cesty k titulkům
 
 **Podle IMDb id** (`Engine._opensubtitles_subtitles`, běží v `kolo()` jako úloha
 `OSUB_TASK` vedle titulků z WebShare). U seriálu jde dotaz na `parent_imdb_id`
-plus číslo sezóny a dílu zvlášť, takže se titulky k jinému dílu nemůžou přichytit —
+plus číslo sezóny a dílu zvlášť, takže se titulky k jinému dílu nemůžou přichytit –
 chyba, kterou u WebShare řešila 5.2.34; `_epizoda_sedi()` to navíc ověří
 z `feature_details` v odpovědi, ne z názvu souboru. Titul bez IMDb id se přeskočí:
 podle názvu se tu schválně nehledá, právě aby nemohl přijít cizí titul.
 
-**Podle otisku souboru** (`Engine.subtitles_by_hash`) — velikost souboru plus součet
+**Podle otisku souboru** (`Engine.subtitles_by_hash`) – velikost souboru plus součet
 prvních a posledních 64 kB, sčítaný po osmi bajtech little-endian v 64 bitech.
 Výpočet je ověřený proti oficiálnímu testovacímu vektoru OpenSubtitles
 (`breakdance.avi`, 12 909 756 B → `8e245d9679d31e12`; ověřeno 2026-09-20).
 Takové titulky sedí i časově, ne jen k titulu. Začátek souboru už kvůli hlavičce
-čte `mediainfo.probe()`, konec stojí jediný `Range` dotaz navíc — proto se otisk
+čte `mediainfo.probe()`, konec stojí jediný `Range` dotaz navíc – proto se otisk
 nepočítá při výpisu streamů (to by byl dotaz na každý řádek), ale až u streamu,
 který si uživatel vybral, a jen když k němu nemáme lepší titulky.
 
@@ -344,24 +344,24 @@ stažení jde z denní kvóty uživatele, takže se s ní nakládá jako s peně
 ## Zapečetění kódem (`lib/sealbox.py`, 2026-09-20)
 
 Kryptografie, kterou dřív nesl jen `syncbox.py`, stojí od přenosu nastavení
-zvlášť — obojí ji potřebuje beze zbytku stejnou. Odvození klíčů z kódu
+zvlášť – obojí ji potřebuje beze zbytku stejnou. Odvození klíčů z kódu
 (PBKDF2 → `ident`/`enc`/`mac`), Crockford Base32 bez `I`, `L`, `O` a `U`,
 `seal`/`unseal` s gzipem a encrypt-then-MAC jen ze stdlib. Podrobnosti níž
-v oddílu o synchronizaci — popisují týž mechanismus.
+v oddílu o synchronizaci – popisují týž mechanismus.
 
 Každý účel má **vlastní sůl** (`nokturno-sync-v1`, `nokturno-transfer-v1`), takže
 z téhož kódu vyjdou jinde jiné klíče a blob jednoho účelu nejde podstrčit
 druhému. Délka kódu je parametr: synchronizace 16 znaků (dlouhodobá skupina),
 přenos 8 (žije čtvrthodinu).
 
-`syncbox.py` si kryptografii nedrží — importuje `sealbox`
+`syncbox.py` si kryptografii nedrží – importuje `sealbox`
 (`keys_for(code, b"nokturno-sync-v1", 16)`, adresa skupiny je atribut `ident`).
 
 ## Synchronizace bez Home Assistanta (`lib/syncbox.py`, 2026-09-17)
 
 Dnešní `sync.py` umí vyměňovat stav mezi více Kodi, ale potřebuje k tomu HA jako
 střed (`POST /api/nokturno/sync`). `syncbox.py` dává tutéž funkci i domácnostem
-bez HA — střed dělá dashboard, ale **jen jako slepý relay**: ukládá neprůhledné
+bez HA – střed dělá dashboard, ale **jen jako slepý relay**: ukládá neprůhledné
 bloby, které nedokáže přečíst. Zadání uživatele (2026-09-17): anonymní, a nastavení
 včetně účtů se synchronizuje taky, ale musí jít nezvolit.
 
@@ -374,14 +374,14 @@ včetně účtů se synchronizuje taky, ale musí jít nezvolit.
 > v integraci pro HA je pole **Kód skupiny**. Vydáno v Kodi a HA 6.6.0.
 
 **Protokol slévání se nemění.** `collect_changes()` / `apply_changes()` zůstávají
-jak jsou — slévání je last-write-wins podle `ts`, tedy komutativní, takže
+jak jsou – slévání je last-write-wins podle `ts`, tedy komutativní, takže
 nezáleží, v jakém pořadí a od koho záznamy přijdou. To je celý důvod, proč relay
 nemusí nic chápat: každý klient si slije cizí stavy sám u sebe.
 
 ### Skupina a kód
 
 Master vygeneruje **kód**: 16 znaků Crockford Base32 (bez `I`, `L`, `O`, `U`, ať
-se nepřepisuje špatně z TV), zobrazený jako `NKT-XXXX-XXXX-XXXX-XXXX` — 80 bitů
+se nepřepisuje špatně z TV), zobrazený jako `NKT-XXXX-XXXX-XXXX-XXXX` – 80 bitů
 entropie. Kód je zároveň klíč; **na server nejde nikdy**, ani v hashované podobě
 jinak než takto:
 
@@ -395,12 +395,12 @@ mac_key  = hmac.new(root, b"mac", hashlib.sha256).digest()
 `group_id` je z kódu odvozené jednosměrně, takže slouží zároveň jako adresa
 skupiny i jako bearer token relaye: kdo ho zná, smí do skupiny psát a číst z ní,
 ale bez kódu nic nedešifruje. **Proto nesmí být v URL** (Tailscale i nginx logují
-cesty) — patří do hlavičky `X-Nokturno-Group`.
+cesty) – patří do hlavičky `X-Nokturno-Group`.
 
 ### Šifrování jen ze stdlib
 
 Doplněk pro Kodi má dodnes jedinou závislost (`xbmc.python`) a stálo by to za to
-udržet — `script.module.pycryptodome` by u stovky už nasazených instalací
+udržet – `script.module.pycryptodome` by u stovky už nasazených instalací
 znamenal, že si aktualizaci nestáhne každý, kdo má vypnuté oficiální repo.
 Stdlib stačí: `hashlib`, `hmac`, `os.urandom`. Nevymýšlí se šifra, skládají se
 standardní primitiva (SHA-256 v counter módu jako proudová šifra +
@@ -426,18 +426,18 @@ drží jeden přepisovaný řádek na zařízení. Nová instalace tím dostane 
 odpadá fronta i úklid delt a ztracený blob nic nerozbije. Nahrává se jen při
 změně otisku (klient si pamatuje hash posledního odeslaného blobu).
 
-**Pozor na `items`** — snímky titulů jsou v celém stavu dominantní. Změřeno na
+**Pozor na `items`** – snímky titulů jsou v celém stavu dominantní. Změřeno na
 skutečném profilu (průměrný snímek 1,3 kB JSON): se snímky ke všem zhlédnutým
 titulům má 500 titulů blob **177 kB**, tedy přes `MAX_BLOB` (128 kB), a 2000
 titulů 700 kB. Synchronizace by tím od pár set zhlédnutých titulů přestala
 fungovat úplně, ne zpomalit.
 
-Do blobu proto jdou jen snímky, bez kterých se položka nevykreslí — **Můj seznam
+Do blobu proto jdou jen snímky, bez kterých se položka nevykreslí – **Můj seznam
 a rozkoukané** (`sync._snapshots`, strop `SNAPSHOT_MAX` = 300 od nejčerstvějšího).
 Dokoukaný titul si příjemce dohledá sám, `recover_snapshot()` (hubený snímek, od
 Kodi `5.2.7~beta11`) na to už existuje. Plný profil (5000 zhlédnutých, 250
 rozkoukaných) je pak **93 kB**. Druhá pojistka je v `syncbox.sync_once`: kdyby
-blob přesto přerostl, půlí se počet snímků, dokud se nevejde — kolo skončí bez
+blob přesto přerostl, půlí se počet snímků, dokud se nevejde – kolo skončí bez
 části obrázků, ne chybou.
 
 ### Kudy která domácnost chodí
@@ -450,7 +450,7 @@ Středisko se volí v nastavení (`sync_mode`) a jsou dvě možnosti:
 | Home Assistant | integrace Nokturno (`POST /api/nokturno/sync`) | kdo HA má a všechna Kodi jsou doma |
 
 **Kodi mimo domácí síť** (telefon, chata) na adresu HA nedosáhne, na relay ano.
-Proto do skupiny smí chodit i **samo HA** — v integraci je pole *Kód skupiny* a jednou za pět minut si s relayem vymění totéž, co s Kodi doma
+Proto do skupiny smí chodit i **samo HA** – v integraci je pole *Kód skupiny* a jednou za pět minut si s relayem vymění totéž, co s Kodi doma
 (`syncbox.sync_once(..., stamp=True)`). Topologie je pak hvězda přes relay a
 nezáleží na tom, jestli je zrovna některé Kodi zapnuté.
 
@@ -474,13 +474,13 @@ i přijímá jen to, co je zapnuté:
 | `accounts` | přihlášení ke zdrojům (WebShare, HellSpy, Sledujteto, FastShare, Sosáč, úložiště) | **vyp** |
 
 Master smí do skupiny zapsat **doporučené** okruhy (šifrovaný konfigurační blob),
-které si nový člen předvyplní. Vynutit je nemůže a ani nemá — server do obsahu
+které si nový člen předvyplní. Vynutit je nemůže a ani nemá – server do obsahu
 nevidí, takže jediná vynucovací vrstva je klient sám.
 
 `settings`/`accounts` se serializují podle schématu, které už umí
 `remote_setup.remote_setup_schema()` (čte `settings.xml` po skupinách, zná typ
 `password`). Nutný je **explicitní seznam nastavení vázaných na zařízení**, která
-se nesynchronizují nikdy — složka pro stahování, jazyk rozhraní, adresa lokální
+se nesynchronizují nikdy – složka pro stahování, jazyk rozhraní, adresa lokální
 Luny, `stats_enabled`, `crash_reports` a samotné nastavení synchronizace. Bez
 takového seznamu by sdílení nastavení rozbilo každý box, který má něco svého.
 
@@ -489,7 +489,7 @@ takového seznamu by sdílení nastavení rozbilo každý box, který má něco 
 - **Schvalování masterem nechrání data.** Kdo má kód, dešifruje obsah bez ohledu
   na to, jestli ho master „pustil dovnitř". Skutečná ochrana je jediná: kód platí
   krátce (server přijme nové `device_id` do skupiny jen v okně po založení nebo
-  po výslovném otevření masterem — to je metadata, ta server vidět smí) a v UI
+  po výslovném otevření masterem – to je metadata, ta server vidět smí) a v UI
   se ukazuje jen, dokud se opisuje.
 - **Odebrání zařízení = nový kód.** Jinak to v end-to-end světě nejde; ostatní
   se musí spárovat znovu. V UI to musí být napsané, ne objevené.
@@ -497,18 +497,18 @@ takového seznamu by sdílení nastavení rozbilo každý box, který má něco 
   potvrzené textem, který to říká nahlas.
 - **Ztracený kód = ztracená skupina.** Server neumí obnovu, protože nemá co obnovit.
 
-### Sloučení stavu — na co si dát pozor
+### Sloučení stavu – na co si dát pozor
 
 - **Rozkoukanost je konfliktní.** Dva lidé na dvou TV u téhož seriálu si LWW
-  navzájem přepíšou pozici — to je v pořádku, poslední pozice je ta, kde se
+  navzájem přepíšou pozici – to je v pořádku, poslední pozice je ta, kde se
   opravdu skončilo. Ztratit se ale nesmí příznak „tohle už jsem viděl", takže
   `playcount` se slévá **maximem** (`sync._keep_playcount`), ne podle času:
   kdo film dokoukal na jedné TV a na druhé ho pustil znovu, o označení nepřijde.
-  Varianta „vyhrává větší pozice" se nepoužila — vracela by uživatele zpátky
+  Varianta „vyhrává větší pozice" se nepoužila – vracela by uživatele zpátky
   u titulu, který dokoukal na jiném zařízení.
 - **Rozbité hodiny.** Android box po výpadku napíše `ts` z budoucnosti a LWW ten
   záznam zafixuje napořád. Relay čas nevidí (blob je šifrovaný), takže clamp musí
-  dělat příjemce při `apply_changes` — odmítnout `ts` výrazně nad vlastním časem.
+  dělat příjemce při `apply_changes` – odmítnout `ts` výrazně nad vlastním časem.
 - **Trim není smazání.** `WATCHED_MAX` ořízne nejstarší záznamy; oříznutí se
   nesmí projevit jako změna k odeslání, jinak by se stav postupně vyprazdňoval
   napříč skupinou.
@@ -516,11 +516,11 @@ takového seznamu by sdílení nastavení rozbilo každý box, který má něco 
 ### Anonymita
 
 Relay ukládá `group_id`, `device_id` (náhodné, generované klientem), pořadí
-revize, čas a blob. **Žádnou vazbu na `install_id` ze statistik** — jinak by šlo
+revize, čas a blob. **Žádnou vazbu na `install_id` ze statistik** – jinak by šlo
 spárovat anonymní hlášení s konkrétní domácností a celá anonymita statistik by
 padla. Zařízení, které se dlouho neozve, se maže i s blobem.
 
-## SyncWatch — společné sledování (`lib/syncwatch.py`, 2026-09-23)
+## SyncWatch – společné sledování (`lib/syncwatch.py`, 2026-09-23)
 
 Synchronizace přehrávání víc zařízení přes slepý server dashboardu (`/syncwatch/*`).
 Kód skupiny `SW-XXXX-XXXX` (8 znaků Crockford Base32) dává přes `sealbox`
@@ -528,17 +528,17 @@ Kód skupiny `SW-XXXX-XXXX` (8 znaků Crockford Base32) dává přes `sealbox`
 stav přehrávání (`load`, `playing`, `pos`, `phase`) i záznam člena (`name`, `ready`, `buf`).
 Server razí `at`/`seq`/`by`, cílová pozice je `pos + (server_now − at)` při přehrávání.
 
-- `Client` — create/join/state/me/lock/leave/poll (long-poll 25 s), `Closed` při 410.
-- `Coordinator` — čistá logika bez sítě a bez Kodi (testy simulují skupinu v paměti):
+- `Client` – create/join/state/me/lock/leave/poll (long-poll 25 s), `Closed` při 410.
+- `Coordinator` – čistá logika bez sítě a bez Kodi (testy simulují skupinu v paměti):
   jen vedoucí načítá titul, vedoucí čeká na připravenost členů (nejvýš `START_WAIT`),
   pauza/play/přetočení od kohokoli, potlačení ozvěny, srovnání odchylky nad `TOLERANCE`,
   čekání na bufferujícího, pozdní příchozí naskočí.
-- `Runtime` — vlákno pollu a vlákno práce nad `Coordinator`, pro službu hostitele.
-- `valid_replay()` pustí jen adresy `plugin://plugin.video.nokturno/` s akcemi přehrání —
+- `Runtime` – vlákno pollu a vlákno práce nad `Coordinator`, pro službu hostitele.
+- `valid_replay()` pustí jen adresy `plugin://plugin.video.nokturno/` s akcemi přehrání –
   podvržený stav skupiny nespustí nic jiného.
 - Hlášky jako kódy (`NOTICES`, `notice_text()`), texty si překládá větev.
 
-## Hlídání — nové díly a tituly bez streamu (`lib/watch.py`, 2026-09-24)
+## Hlídání – nové díly a tituly bez streamu (`lib/watch.py`, 2026-09-24)
 
 Vzniklo v integraci pro Home Assistant (sledované seriály od 1.x, Hlídané a
 příznak „kontrolovat dál" od 5.2.x), od 8.3.0 je v jádru a používá ho i Kodi.
@@ -550,9 +550,9 @@ příznak „kontrolovat dál" od 5.2.x), od 8.3.0 je v jádru a používá ho i
 - **Hlídané tituly** (`wantlist.json` = vlastní seznam, `trakt_list.json` = výsledky
   kontroly i pro seznam z Traktu, `trakt_flags.json` = „kontrolovat dál"). Ozve se,
   když se stream objeví nebo přibude. `q:<název>` hlídá titul, který zatím žádný
-  zdroj nezná. Když streamy „zmizí", výsledek se nepřepíše nulou — nejspíš výpadek sítě.
+  zdroj nezná. Když streamy „zmizí", výsledek se nepřepíše nulou – nejspíš výpadek sítě.
 - **Kdy se kontroluje:** seriál po `SERIES_EVERY` (6 h), titul po `WANTED_EVERY` (24 h),
-  vždy podle `checked_ts`, a ten jde synchronizací — kontrola z jiného zařízení se
+  vždy podle `checked_ts`, a ten jde synchronizací – kontrola z jiného zařízení se
   počítá. `anything_due()` to zjistí bez sítě (služba v Kodi podle toho budí plugin).
 - **Oznámení** (`pending_notices`) si počítá každé zařízení samo a pamatuje si je
   v `watch_notified.json` (nesynchronizuje se). Ozve se tak i nález, který přišel
@@ -568,7 +568,7 @@ příznak „kontrolovat dál" od 5.2.x), od 8.3.0 je v jádru a používá ho i
 
 `Store` drží data v JSON souborech, na které sahá víc procesů najednou: doplněk v Kodi
 se spouští znovu při každém kliknutí a vedle něj běží služba na pozadí (pozici přehrávání
-zapisuje každých 30 s). `os.replace` je atomický, ale celý cyklus načti–uprav–ulož ne —
+zapisuje každých 30 s). `os.replace` je atomický, ale celý cyklus načti–uprav–ulož ne –
 prohrávající zápis tiše zahodil, co mezitím uložil ten druhý.
 
 Zápis, který vychází z dosavadního obsahu, proto patří do transakce:
@@ -580,12 +580,12 @@ with store.updating("watched", {}) as data:
 
 `updating()` vezme výhradní zámek na `<name>.lock` vedle dat (`fcntl.flock`, na Windows
 `msvcrt.locking`), načte čerstvý obsah z disku, předá ho a na konci uloží. Zamyká se
-prázdný soubor `.lock`, ne data samotná — zámek tak přežije `os.replace`. Když zamknout
+prázdný soubor `.lock`, ne data samotná – zámek tak přežije `os.replace`. Když zamknout
 nejde (síťový disk, Android SAF), jen se pokračuje bez zámku a zapíše se to do logu:
 zámek nesmí být důvod, proč doplněk spadne.
 
 Vnořené volání nad **týmž** jménem dostane týž objekt a ukládá se jednou, na konci té
-vnější — jinak by vnitřní transakce načetla data z disku znovu a vnější by je svým
+vnější – jinak by vnitřní transakce načetla data z disku znovu a vnější by je svým
 uložením přepsala zpátky. Různá jména se vnořovat smí (`toggle_favourite` → `remember_item`).
 
 Soubory zakládá `Store.save()` s právy `0o600`: `trakt.json` a `cztor_session.json` nesou
@@ -594,7 +594,7 @@ přístupové tokeny.
 ## Stropy pro veřejnou instanci (od 6.2.1)
 
 Doplněk pro Stremio prochází úložiště, jehož adresu si uživatel zadal do nastavení v adrese
-doplňku — tedy cizí server. `StorageApi` proto bere `crawl_deadline`, `max_dirs` a `timeout`
+doplňku – tedy cizí server. `StorageApi` proto bere `crawl_deadline`, `max_dirs` a `timeout`
 a `Engine` je předává jako `storage_limits`; hodnoty pro veřejnou instanci jsou
 `storage_api.PUBLIC_*` (15 s na průchod, 100 složek, 8 s na odpověď). Kodi a HA je nedostávají:
 tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
@@ -625,7 +625,7 @@ Dotazy a rady: [facebooková skupina Nokturno](https://www.facebook.com/groups/n
 
 ## Podpora
 
-[![Podpoř Nokturno — Ko-fi, PayPal, Bitcoin](https://raw.githubusercontent.com/matata86/plugin.video.nokturno/main/.github/podpora.png)](https://ko-fi.com/matata86)
+[![Podpoř Nokturno – Ko-fi, PayPal, Bitcoin](https://raw.githubusercontent.com/matata86/plugin.video.nokturno/main/.github/podpora.png)](https://ko-fi.com/matata86)
 
 - **Ko-fi:** https://ko-fi.com/matata86
 - **PayPal:** https://paypal.me/matata86
