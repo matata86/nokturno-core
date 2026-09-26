@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -29,9 +30,10 @@ def ebml(eid, payload):
     return id_bytes + size + payload
 
 
-def mkv_sample():
+def mkv_sample(stereo=None):
+    extra = ebml(0x53B8, bytes([stereo])) if stereo is not None else b""
     video = ebml(0xAE, ebml(0x83, b"\x01") + ebml(0x86, b"V_MPEG4/ISO/AVC")
-                 + ebml(0xE0, ebml(0xB0, (1920).to_bytes(2, "big")) + ebml(0xBA, (800).to_bytes(2, "big"))))
+                 + ebml(0xE0, ebml(0xB0, (1920).to_bytes(2, "big")) + ebml(0xBA, (800).to_bytes(2, "big")) + extra))
     audio_cz = ebml(0xAE, ebml(0x83, b"\x02") + ebml(0x86, b"A_AC3") + ebml(0x22B59C, b"cze")
                     + ebml(0xE1, ebml(0x9F, b"\x06")))
     audio_en = ebml(0xAE, ebml(0x83, b"\x02") + ebml(0x86, b"A_AAC") + ebml(0x22B59C, b"eng")
@@ -101,6 +103,12 @@ class TestParsery(unittest.TestCase):
         self.assertEqual((tracks[0]["width"], tracks[0]["height"], tracks[0]["codec"]), (3840, 1600, "avc1"))
         self.assertEqual((tracks[1]["lang"], tracks[1]["channels"]), ("cze", 6), "AC-3: kanály z dac3 (acmod 7 + LFE), ne z hlavičky (2)")
         self.assertEqual((tracks[2]["lang"], tracks[2]["channels"], tracks[2]["codec"]), ("eng", 2, "mp4a"))
+
+    def test_mkv_stereo_mode(self):
+        for stereo, expected in ((None, False), (0, False), (1, True), (3, True)):
+            data = mkv_sample(stereo)
+            with mock.patch.object(mediainfo, "fetch_sized", return_value=(data, len(data))):
+                self.assertEqual(bool(mediainfo.probe("http://x/film.mkv").get("stereo3d")), expected, stereo)
 
     def test_probe_pres_http_s_range(self):
         data = mkv_sample()
@@ -241,8 +249,10 @@ class TestRazeni(unittest.TestCase):
     def test_skryt_3d(self):
         rows = [self.s("Avatar.2009.1080p.3D.HSBS.CZ.mkv", "8 GB", "sbs"), self.s("Avatar.2009.1080p.CZ.mkv", "8 GB", "2d"),
                 self.s("Avatar 2009 Half-OU 1080p", "8 GB", "ou"), self.s("Toy.Story.3.2010.1080p.mkv", "8 GB", "ts3")]
+        rows[3]["_media"] = {"stereo3d": True}   # 3D pozná jen hlavička
         out = streams.arrange(rows, hide_3d=True)
-        self.assertEqual([r["url"] for r in out], ["2d", "ts3"])
+        self.assertEqual([r["url"] for r in out], ["2d"])
+        self.assertEqual(streams.arrange([rows[0]], hide_3d=True), [], "3D ani jako jediný stream")
         self.assertNotEqual(streams.merge_key(rows[0]), streams.merge_key(rows[1]), "3D se se 2D neslučuje")
 
     def test_prostorovy_zvuk_a_overene_napred(self):
