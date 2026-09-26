@@ -238,6 +238,13 @@ class TestRazeni(unittest.TestCase):
         out = streams.arrange(rows, hide_sd=True, max_size_gb=0.5, order="size_asc")
         self.assertEqual([r["url"] for r in out], ["sd", "maly", "velky"], "když by filtr nic nenechal, vrátí vše")
 
+    def test_skryt_3d(self):
+        rows = [self.s("Avatar.2009.1080p.3D.HSBS.CZ.mkv", "8 GB", "sbs"), self.s("Avatar.2009.1080p.CZ.mkv", "8 GB", "2d"),
+                self.s("Avatar 2009 Half-OU 1080p", "8 GB", "ou"), self.s("Toy.Story.3.2010.1080p.mkv", "8 GB", "ts3")]
+        out = streams.arrange(rows, hide_3d=True)
+        self.assertEqual([r["url"] for r in out], ["2d", "ts3"])
+        self.assertNotEqual(streams.merge_key(rows[0]), streams.merge_key(rows[1]), "3D se se 2D neslučuje")
+
     def test_prostorovy_zvuk_a_overene_napred(self):
         rows = [self.s("1080p", "4.0 GB", "odhad"), self.s("1080p", "4.0 GB | Zvuk: CZ 2.0", "stereo"),
                 self.s("1080p", "4.0 GB | Zvuk: CZ 5.1", "surround")]
