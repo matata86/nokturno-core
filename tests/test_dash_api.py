@@ -252,6 +252,61 @@ class TestTmdbPodobne(unittest.TestCase):
         self.assertEqual(api.similar("series", "tt0000001"), [])
 
 
+
+class TestTraktKlic(unittest.TestCase):
+    """Klíč aplikace Nokturno na Traktu z dashboardu (`/trakt-key`)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.api = DashApi(cache=Store(self.tmp.name))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_vrati_klic_a_drzi_ho_v_cache(self):
+        klic = {"client_id": "M1IpdjlYJR2IMkzI-8Q_chgzSsl3bjE6Kqwqtvdtcsg", "client_secret": "a" * 43}
+        sit = Sit({"/trakt-key": klic})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            self.assertEqual(self.api.trakt_key(), (klic["client_id"], klic["client_secret"]))
+            self.api.trakt_key()
+        self.assertEqual(len(sit.volani), 1)
+
+    def test_bez_klice_nebo_nesmysl_vrati_prazdno(self):
+        for odpoved in (urllib.error.HTTPError("u", 404, "", {}, None),
+                        {"client_id": "kratky", "client_secret": "a" * 43},
+                        {"client_id": "a" * 43, "client_secret": "<script>" + "a" * 30}):
+            tmp = tempfile.TemporaryDirectory()
+            with mock.patch.object(urllib.request, "urlopen", Sit({"/trakt-key": odpoved})):
+                self.assertEqual(DashApi(cache=Store(tmp.name)).trakt_key(), ("", ""))
+            tmp.cleanup()
+
+
+class TestTraktUserAgent(unittest.TestCase):
+    """Cloudflare před Traktem odmítá `Python-urllib` (403/1010) — každý dotaz nese vlastní UA."""
+
+    def test_poll_token_posila_user_agent(self):
+        from nokturno_core.lib.trakt_api import TraktApi
+        videne = []
+
+        def urlopen(req, timeout=None):
+            videne.append(req.get_header("User-agent"))
+            raise urllib.error.HTTPError(req.full_url, 400, "pending", {}, None)
+
+        with mock.patch.object(urllib.request, "urlopen", urlopen):
+            self.assertIsNone(TraktApi("id", "secret").poll_token("kod"))
+        self.assertTrue(videne and videne[0].startswith("Nokturno"))
+
+    def test_pick_keys_vlastni_aplikace_ma_prednost(self):
+        from nokturno_core.lib.trakt_api import pick_keys
+
+        class Dash:
+            def trakt_key(self):
+                return ("server-id", "server-secret")
+
+        self.assertEqual(pick_keys(" moje-id ", "moje-secret", Dash()), ("moje-id", "moje-secret"))
+        self.assertEqual(pick_keys("moje-id", "", Dash()), ("server-id", "server-secret"))
+        self.assertEqual(pick_keys("", "", None), ("", ""))
+
 if __name__ == "__main__":
     unittest.main()
 
