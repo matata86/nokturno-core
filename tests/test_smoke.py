@@ -635,6 +635,17 @@ class TestResumeStream(unittest.TestCase):
         self.store.set_resume("film1", 200, 1000)
         self.assertEqual(self.store.resume_stream("film1"), ("ws:abc", ""))
 
+    def test_odebrany_z_rozkoukanych_stream_nevrati(self):
+        """Odebrání z Pokračovat (`set_resume(key, 0, 0)`) — titul se má zase vybírat v dialogu."""
+        self.store.set_resume("film1", 100, 1000, stream_url="ws:abc", stream_subs="")
+        self.store.set_resume("film1", 0, 0)
+        self.assertIsNone(self.store.resume_stream("film1"))
+
+    def test_zhlednuty_stream_vrati(self):
+        self.store.set_resume("film1", 100, 1000, stream_url="ws:abc", stream_subs="")
+        self.store.set_watched("film1")
+        self.assertEqual(self.store.resume_stream("film1"), ("ws:abc", ""))
+
 
 class TestVypadekZdroje(unittest.TestCase):
     """Výpadek jednoho zdroje (vypnutý addon Luny) nesmí shodit hledání v ostatních."""
