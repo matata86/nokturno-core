@@ -279,7 +279,7 @@ katalogů.
 - `recommend(seeds, similar_fn, skip=…)` – sloučení a řazení: napřed tituly,
   které doporučuje víc vzorů, pak podle nejlepšího pořadí u některého z nich.
   Každá položka nese `_because` (id vzoru), ze kterého si klient udělá
-  „Protože jsi viděl …“ podle vlastního snímku titulu, tedy bez dotazu navíc.
+  „Doporučeno podle …“ podle vlastního snímku titulu, tedy bez dotazu navíc.
 - `genre_counts` / `pick_genre` – vážené losování žánru pro „Náhodný film“.
 
 Cena na TMDB (studeně, pět vzorů po dvanácti doporučeních): 2–3 dotazy na vzor
@@ -469,7 +469,7 @@ i přijímá jen to, co je zapnuté:
 | `watched` | zhlédnuto a rozkoukanost (`watched.json`) | zap |
 | `favourites` | Můj seznam přes deník `favlog` | zap |
 | `history` | historie hledání (`histlog`) | zap |
-| `watchlist` | Hlídané: sledované seriály a hlídané tituly (`watchlog`) | zap |
+| `watchlist` | Hlídané: seriály a tituly (`watchlog`) | zap |
 | `settings` | nastavení doplňku bez hesel | **vyp** |
 | `accounts` | přihlášení ke zdrojům (WebShare, HellSpy, Sledujteto, FastShare, Sosáč, úložiště) | **vyp** |
 
@@ -543,7 +543,7 @@ Server razí `at`/`seq`/`by`, cílová pozice je `pos + (server_now − at)` př
 Vzniklo v integraci pro Home Assistant (sledované seriály od 1.x, Hlídané a
 příznak „kontrolovat dál" od 5.2.x), od 8.3.0 je v jádru a používá ho i Kodi.
 
-- **Sledované seriály** (`watchlist.json`): nový díl se hlásí, až když má stream.
+- **Hlídané seriály** (`watchlist.json`): nový díl se hlásí, až když má stream.
   Kontrola jde od posledního dostupného dílu dopředu, díl bez data vydání se
   nepočítá (`aired_episodes`) a mezeru uprostřed přeskočí `skip_gap_candidates`.
   Nejvýš `BUDGET` (6) dotazů na seriál.
