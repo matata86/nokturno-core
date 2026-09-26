@@ -614,6 +614,13 @@ tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
 - **Diagnostika Luny.** `luna_api.diagnose()` vrací kód příčiny (viz výše); manifest Luny se neověřuje tokenem,
   proto se ptá na streamy.
 
+## Pomoc
+
+Dotazy a rady: [facebooková skupina Nokturno](https://www.facebook.com/groups/nokturno). Chyby hlas v repozitáři klienta, kde se projevily:
+[Kodi](https://github.com/matata86/plugin.video.nokturno/issues),
+[Home Assistant](https://github.com/matata86/nokturno-ha/issues),
+[Stremio](https://github.com/matata86/nokturno-stremio/issues).
+
 ---
 
 ## Podpora
