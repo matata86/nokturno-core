@@ -123,6 +123,9 @@ class TestAdresyACesty(unittest.TestCase):
         self.assertEqual(normalize_url("dav://1.2.3.4:8090"), "http://1.2.3.4:8090/")
         self.assertEqual(normalize_url("nas.lan/dav/"), "http://nas.lan/dav/")
         self.assertEqual(normalize_url("https://jmeno:heslo@nas.lan/x/"), "https://nas.lan/x/")
+        # místní cesta z Windows nesmí shodit celý doplněk (pád 84fd6466, 8.2.4)
+        self.assertEqual(normalize_url(r"C:\Users\uživatel\Videa"), "")
+        self.assertEqual(normalize_url("http://nas:abc/"), "")
         self.assertEqual(normalize_url("ftp://nas.lan/"), "")
         self.assertEqual(normalize_url(""), "")
 
