@@ -2,9 +2,10 @@
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-podpo%C5%99%20autora-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/matata86) [![PayPal](https://img.shields.io/badge/PayPal-paypal.me%2Fmatata86-00457C?logo=paypal&logoColor=white)](https://paypal.me/matata86) [![Bitcoin](https://img.shields.io/badge/Bitcoin-BTC-f7931a?logo=bitcoin&logoColor=white)](#podpora)
 
-Sdílené jádro Nokturna. Přehrávání vlastního úložiště (WebDAV/NAS) je hlavní funkce; volitelně
-navíc hledání a streamy ve WebShare, Sosáči, HellSpy, Sledujteto, FastShare, CZtoru, Luně
-a na trackerech přes Prowlarr, k tomu titulky z OpenSubtitles — bez vazby na hostitele.
+Sdílené jádro Nokturna. Přehrávání vlastního úložiště (WebDAV/NAS) je hlavní funkce. Jako volitelnou
+doplňkovou službu obsahuje klienty vyhledávačů třetích stran (WebShare, Sosáč, HellSpy, Sledujteto,
+FastShare / Sdilej.cz, Přehraj.to, CZtor, Luna), titulky z OpenSubtitles a torrenty přes Prowlarr
+(používá je jen integrace pro HA). Samo žádný obsah nehostuje. Bez vazby na hostitele.
 
 Čistý Python 3, jen standardní knihovna. Žádný import z `xbmc*` ani
 z `homeassistant`, což hlídá test.
@@ -48,25 +49,27 @@ tedy přesně věci, které se při rozesílání dají tiše rozbít.
 ```
 nokturno_core/
 ├── engine.py       jádro: hledání, sloučení zdrojů, streamy, řazení
-├── lib/
-│   ├── const.py    klíče nastavení a výchozí hodnoty
-│   ├── luna_api.py cinemeta_api.py tmdb_api.py     katalogy a metadata
-│   ├── webshare_api.py sosac_direct.py hellspy_api.py   zdroje streamů
-│   ├── prowlarr.py qbittorrent.py                  torrenty
-│   ├── streams.py mediainfo.py                     rozbor a řazení streamů
-│   ├── cztor_api.py opensubtitles_api.py           CZtor (párování PINem) a titulky z OpenSubtitles
-│   ├── tracks.py                                   volba zvuku a titulků podle jazyka (CZ, SK, EN, HU)
-│   ├── safe_redirect.py abort.py                   přesměrování bez úniku hlaviček, přerušení práce při vypnutí
-│   ├── setsync.py                                  nastavení a přihlášení sdílené synchronizací
-│   ├── crash.py                                    hlášení o pádech (otisk, mazání citlivých údajů, fronta)
-│   ├── accounts.py                                 stav účtů napříč zdroji (menu Kodi, senzor HA)
-│   ├── trend_api.py dash_api.py                    žebříček, katalogy, podobné tituly a TV program z dashboardu
-│   ├── foryou.py                                   „Pro tebe“: slití doporučení k naposledy zhlédnutým, losování žánru
-│   ├── sync.py syncbox.py                          synchronizace přes HA / přes slepý relay
-│   ├── sealbox.py                                  kód z obrazovky → klíče, zapečetění (sdílí syncbox i transfer)
-│   ├── transfer.py                                 přenos nastavení do dalšího zařízení
-│   └── store.py stats.py trakt_api.py enrich.py sosac_api.py
-└── ...
+└── lib/
+    ├── const.py                                        klíče nastavení a výchozí hodnoty
+    ├── storage_api.py                                  vlastní úložiště (WebDAV)
+    ├── webshare_api.py sosac_direct.py sosac_api.py hellspy_api.py sledujteto_api.py
+    │   fastshare_api.py prehrajto_api.py cztor_api.py luna_api.py   vyhledávače třetích stran
+    ├── cinemeta_api.py tmdb_api.py wikidata_api.py enrich.py          katalogy a metadata
+    ├── opensubtitles_api.py                            titulky z OpenSubtitles
+    ├── prowlarr.py qbittorrent.py                      torrenty (jen HA)
+    ├── streams.py mediainfo.py tracks.py               rozbor a řazení streamů, volba zvuku a titulků (CZ, SK, EN, HU)
+    ├── source_errors.py badlogin.py deadhost.py        popis výpadků, pauza po špatném hesle, nedostupné hosty
+    ├── accounts.py                                     stav účtů napříč zdroji (menu Kodi, senzor HA)
+    ├── servers.py dash_api.py trend_api.py             adresy serveru, katalogy, žebříček, Koncerty, TV program
+    ├── foryou.py                                       „Pro Tebe“ a náhodný titul
+    ├── watch.py                                        Hlídané: nové díly a tituly bez streamu
+    ├── sync.py syncbox.py setsync.py                   synchronizace přes HA / přes slepý relay, nastavení a účty
+    ├── sealbox.py transfer.py                          zapečetění kódem, přenos nastavení do dalšího zařízení
+    ├── syncwatch.py                                    SyncWatch, společné sledování
+    ├── remote_setup.py qr.py                           Nastavit z mobilu
+    ├── stats.py usage.py crash.py                      anonymní statistiky, počítadla, hlášení o pádech
+    ├── trakt_api.py                                    Trakt.tv
+    └── store.py safe_redirect.py abort.py              úložiště dat a cache, přesměrování bez úniku hlaviček, přerušení práce
 ```
 
 ## Vznik
@@ -76,44 +79,6 @@ jakékoli vazby na hostitele. Do té doby existovala knihovna jako dvě ruční 
 které se stihly rozejít v šesti souborech. Sloučení vzalo z každé větve to, co
 měla navíc: cachování a řazení z větve pro Kodi, ukazatel průběhu v `enrich`
 z větve pro Home Assistant.
-
----
-
-## Podpora
-
-[![Podpoř Nokturno — Ko-fi, PayPal, Bitcoin](.github/podpora.png)](https://ko-fi.com/matata86)
-
-- **Ko-fi:** https://ko-fi.com/matata86
-- **PayPal:** https://paypal.me/matata86
-- **Bitcoin:** `bc1qhjwt8xxmuym0xsd50yfpvjph00386uz73gqwlc`
-
-## Výkon (od 2026-09-14)
-
-- `Engine.streams()` se pěti zdrojů (Luna/Sosáč, WebShare, HellSpy, Sledujteto, FastShare) ptá
-  **souběžně** (`ThreadPoolExecutor`), pořadí výsledků drží kvůli párování v `_merge_direct`.
-  Líné klienty (`ws`, `hs`, `st`, `fs`, `sosac`) zakládá před spuštěním vláken.
-- `original_titles()` se za jeden výpis počítá jednou (paměť v enginu, 5 min; po výpadku
-  Wikidat jen 30 s, aby další výpis zkusil znovu) — dřív pětkrát, při výpadku Wikidat až 100 s navíc.
-- WebShare: selhání loginu už nezamkne zdroj do restartu (`WS_RETRY_S = 60`); re-login jen když
-  server odmítl (`WebshareApiError`), ne při síťové chybě.
-- TMDB: `external_ids` + `images` jedním dotazem (`append_to_response`) — stránka katalogu 1 + 20
-  požadavků místo 1 + 40; sezóny seriálu souběžně.
-- Sosáč: hledání seriálů nad indexem (`sosac:tvindex`, jednou denně) místo 27 souborů a normalizace
-  tisíců názvů při každém dotazu.
-- `enrich`: jeden sdílený executor na proces (dřív nový na každé hledání s `shutdown(wait=False)` —
-  desítky visících vláken) a dedup rozpracovaných dotazů na tentýž titul.
-- Úložiště: značka `.nokturno-rev` se čte nejvýš jednou za minutu (`REV_TTL`); hledání Luny má jednu
-  cache (v `LunaApi`), ne dvě.
-
-## Údržba (2026-09-14)
-
-- Jedna `human_size` a jedna `fold` ve `streams.py` (dřív 4× a 2× s různým zaokrouhlením/chováním);
-  ostatní moduly je jen re-exportují, klienti importují dál z původních míst.
-- Cinemeta jen přes `CinemetaApi` (`Engine.search_catalog` měl třetího vlastního klienta).
-- User-Agent už netvrdí, že je Kodi nebo Home Assistant — `Nokturno (+github)`; `stats.send()`
-  dostává `agent` od hostitele.
-- Pryč diagnostické lešení Sledujteto (`last_keys`, `last_sample`, INFO logování), `HISTORY_MAX`,
-  `_logged` v qBittorrentu, prázdná větev v `sosac_direct.streams`; `urllib.error` importovaný explicitně.
 
 ## Diagnostika Luny (`lib/luna_api.py`, 2026-09-18)
 
@@ -153,8 +118,7 @@ proto v cestě, kterou otevírá uživatel, není ani jedno čekání na odpově
 
 **Dotazů navíc je málo a jsou vzácné** — jeden na zdroj za `TTL`:
 
-* **HellSpy se neptá nikdy.** Jen si přečte vlastní pauzu po 429. Právě
-  opakovanými dotazy si doplněk blokaci dvakrát přivodil (6.0.2, 6.0.4).
+* **HellSpy se neptá nikdy.** Jen si přečte vlastní pauzu po 429.
 * **Co jádro zjistí při běžné práci, se zapíše rovnou** (`Engine._note_account`):
   selhaný login WebShare rozlišený na „odmítnuté heslo" × „výpadek sítě". Zadarmo
   a čerstvěji než jakákoli obnova na pozadí.
@@ -176,16 +140,14 @@ disku by jeden o pauze druhého nevěděl.
 
 Osmý zdroj. Server má **dvě rozhraní** a modul podle účtu volí mezi nimi:
 
-- **JSON API `https://prehrajto.cz/api/v2/`** (doména `.cz`) — používá ho oficiální
-  appka pro Android `to.prehraj.app` (rozebráno z APK 1.0.60). Každý dotaz chce
+- **JSON API `https://prehrajto.cz/api/v2/`** (doména `.cz`). Každý dotaz chce
   `Authorization: Bearer <JWT>`; **anonymní token server nevydává** (žádný guest
   endpoint), takže bez účtu je API nepoužitelné (401 „Missing access token"). Token
   je tentýž JWT, který web ukládá do cookie `access_token` po přihlášení — bere se
   z relace založené `login()` a obnovuje se, jakmile vyprší (platí ~10 min, web ho
   na `GET /` vydá znovu z cookie `refresh_token`).
 - **HTML `https://prehraj.to/`** — tytéž stránky jako prohlížeč (`/hledej/<text>`,
-  `/<slug>/<hash>`, `?do=download`), stejně čte i cizí doplněk `plugin.video.prehrajto`
-  2.0.5.
+  `/<slug>/<hash>`, `?do=download`).
 
 **S účtem se jede přes JSON API**, protože je lepší v každém ohledu: stránkování
 `offset`, hlasy i titulky rovnou ve výsledku hledání, přímý odkaz na **původní
@@ -224,9 +186,7 @@ cachovaného streamu uložit nesmí; dohledávají se až při přehrání (`pts
 
 ## CZtor (`lib/cztor_api.py`, 2026-09-19)
 
-Sedmý zdroj: katalog na předplatné (cztor.com, soubory na giganthost.com). API je to,
-které používá jejich doplněk pro Kodi (`plugin.video.cztor` 0.1.27), ověřené naživo
-na testovacím účtu. Bez tokenu vrací všechno 401.
+Sedmý zdroj: katalog na předplatné (cztor.com). Bez tokenu vrací API všechno 401.
 
 - **Párování PINem, žádné heslo.** `start_pin()` → PIN, uživatel ho potvrdí na
   `cztor.com/activate`, `poll_pin()` uloží tokeny do úložiště jádra (`cztor_session`,
@@ -250,8 +210,8 @@ na testovacím účtu. Bez tokenu vrací všechno 401.
 - V enginu přepínač `cz_enabled` (`CONF_CZ_ENABLED`), zdroj běží souběžně s ostatními,
   `_merge_direct` ho k Luně nepřibaluje. Stav spárování (`sources()["cztor"]`) se zjistí
   při založení enginu — HA čte `sources()` ze smyčky událostí, kam čtení souboru nepatří.
-- Stremio kopii jádra má, CZtor ale nenabízí: každé nastavení doplňku by potřebovalo
-  vlastní párování a server by musel držet a obnovovat tokeny cizích účtů.
+- Stremio (od 8.4.0) páruje PINem ve formuláři; tokeny drží server zapečetěné klíčem,
+  který je jen v adrese doplňku.
 
 Testy `tests/test_cztor_api.py` (20) nad odpověďmi zachycenými z živého API.
 
@@ -302,7 +262,7 @@ jiná větev rodiny) a `blocked` (`DENY`, kdyby přišel podvržený přenos). K
 podle toho ukáže, co se stane, ještě než na to sáhne, a před zápisem si odloží
 kopii `settings.xml`.
 
-## „Pro tebe“ (`lib/foryou.py`, 2026-09-20)
+## „Pro Tebe“ (`lib/foryou.py`, 2026-09-20)
 
 Doporučení k tomu, co uživatel dokoukal naposledy. Modul sám nikam nechodí —
 dostane hotovou `similar_fn` (`TmdbApi.similar`, bez klíče TMDB
@@ -411,8 +371,7 @@ včetně účtů se synchronizuje taky, ale musí jít nezvolit.
 > stav dojde na druhé zařízení a v uloženém blobu se nedá najít název titulu,
 > jeho id, uživatelské jméno ani heslo. V doplňku je kategorie **Synchronizace**
 > (volba střediska, párování kódem, okruhy) a služba jede podle `sync_mode`;
-> v integraci pro HA je pole **Kód skupiny z Kodi**. Vyvíjí se ve větvi `sync`
-> (`Nokturno/sync-dev/`) pod verzí `9.99.0~syncN`.
+> v integraci pro HA je pole **Kód skupiny**. Vydáno v Kodi a HA 6.6.0.
 
 **Protokol slévání se nemění.** `collect_changes()` / `apply_changes()` zůstávají
 jak jsou — slévání je last-write-wins podle `ts`, tedy komutativní, takže
@@ -483,30 +442,26 @@ blob přesto přerostl, půlí se počet snímků, dokud se nevejde — kolo sko
 
 ### Kudy která domácnost chodí
 
-Středisko se volí v nastavení (`sync_mode`) a jsou tři možnosti:
+Středisko se volí v nastavení (`sync_mode`) a jsou dvě možnosti:
 
 | Volba | Kdo je střed | Pro koho |
 |-------|--------------|----------|
+| Dashboard Nokturna | slepý relay (`POST /sync`) | kdo HA nemá, nebo má některé Kodi mimo domácí síť |
 | Home Assistant | integrace Nokturno (`POST /api/nokturno/sync`) | kdo HA má a všechna Kodi jsou doma |
-| Dashboard Nokturna | slepý relay (`POST /sync`) | kdo HA nemá |
-| HA i dashboard | obojí naráz, HA první | kdo HA má, ale některé Kodi je mimo domácí síť |
 
 **Kodi mimo domácí síť** (telefon, chata) na adresu HA nedosáhne, na relay ano.
-Proto do skupiny smí chodit i **samo HA** — v integraci je pole *Kód skupiny
-z Kodi* a jednou za pět minut si s relayem vymění totéž, co s Kodi doma
+Proto do skupiny smí chodit i **samo HA** — v integraci je pole *Kód skupiny* a jednou za pět minut si s relayem vymění totéž, co s Kodi doma
 (`syncbox.sync_once(..., stamp=True)`). Topologie je pak hvězda přes relay a
 nezáleží na tom, jestli je zrovna některé Kodi zapnuté.
 
 `stamp=True` tu není detail: přijatému záznamu se vyrazí **čas příjmu** (`rts`),
 protože filtr `since` v HA kole jde podle příjmu, ne podle vzniku. Bez toho by
 změna, která ležela v relayi pár hodin, do Kodi přes HA už nikdy nedošla. Razit
-`rts` smí jen střed — když dělá most některé Kodi v režimu „obojí", nemá jinou
-možnost než po příjmu z relaye zahodit svoje `since` (`sync.reset_since`) a
-poslat do HA celý stav.
+`rts` smí jen střed.
 
 ### Okruhy (co se synchronizuje)
 
-Pět nezávislých okruhů, každý zapínatelný na každém zařízení zvlášť; posílá se
+Šest nezávislých okruhů, každý zapínatelný na každém zařízení zvlášť; posílá se
 i přijímá jen to, co je zapnuté:
 
 | Okruh | Obsah | Výchozí |
@@ -514,6 +469,7 @@ i přijímá jen to, co je zapnuté:
 | `watched` | zhlédnuto a rozkoukanost (`watched.json`) | zap |
 | `favourites` | Můj seznam přes deník `favlog` | zap |
 | `history` | historie hledání (`histlog`) | zap |
+| `watchlist` | Hlídané: sledované seriály a hlídané tituly (`watchlog`) | zap |
 | `settings` | nastavení doplňku bez hesel | **vyp** |
 | `accounts` | přihlášení ke zdrojům (WebShare, HellSpy, Sledujteto, FastShare, Sosáč, úložiště) | **vyp** |
 
@@ -657,3 +613,13 @@ tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
   a přihlášení mezi zařízeními; nesdílí se adresář stahování ani tokeny CZtoru a Traktu.
 - **Diagnostika Luny.** `luna_api.diagnose()` vrací kód příčiny (viz výše); manifest Luny se neověřuje tokenem,
   proto se ptá na streamy.
+
+---
+
+## Podpora
+
+[![Podpoř Nokturno — Ko-fi, PayPal, Bitcoin](.github/podpora.png)](https://ko-fi.com/matata86)
+
+- **Ko-fi:** https://ko-fi.com/matata86
+- **PayPal:** https://paypal.me/matata86
+- **Bitcoin:** `bc1qhjwt8xxmuym0xsd50yfpvjph00386uz73gqwlc`
