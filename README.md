@@ -625,7 +625,7 @@ Dotazy a rady: [facebooková skupina Nokturno](https://www.facebook.com/groups/n
 
 ## Podpora
 
-[![Podpoř Nokturno — Ko-fi, PayPal, Bitcoin](.github/podpora.png)](https://ko-fi.com/matata86)
+[![Podpoř Nokturno — Ko-fi, PayPal, Bitcoin](https://raw.githubusercontent.com/matata86/plugin.video.nokturno/main/.github/podpora.png)](https://ko-fi.com/matata86)
 
 - **Ko-fi:** https://ko-fi.com/matata86
 - **PayPal:** https://paypal.me/matata86
