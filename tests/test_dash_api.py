@@ -220,6 +220,15 @@ class TestObsah(unittest.TestCase):
         self.assertEqual(query, {"kind": ["movie"], "page": ["2"], "with_genres": ["35|18"],
                                  "with_original_language": ["cs"], "year_from": ["1990"]})
 
+    def test_vlastni_katalog_klicova_slova(self):
+        sit = Sit({"/discover": {"items": [], "pages": 1}})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            self.api.discover("movie", {"with_keywords": "3205|329731", "with_original_language": "cs|sk"})
+            self.api.discover("movie", {"with_keywords": "pohadky"})
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(sit.volani[0]).query)
+        self.assertEqual(query["with_keywords"], ["3205|329731"])
+        self.assertNotIn("with_keywords", urllib.parse.parse_qs(urllib.parse.urlsplit(sit.volani[1]).query))
+
     def test_vlastni_katalog_vypadek(self):
         with mock.patch.object(urllib.request, "urlopen", Sit({"/discover": urllib.error.URLError("x")})):
             self.assertEqual(self.api.discover("series", {}, page=99), (None, 1))
