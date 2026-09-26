@@ -1610,6 +1610,24 @@ class TestPython38(unittest.TestCase):
                     chyby.append(f"{path.name}:{node.lineno}")
         self.assertEqual(chyby, [])
 
+    def test_vyber_streamu_bez_http_server(self):
+        """Tentýž build nemá ani `http.server` (8.4.2); `parse_order` z výběru streamu ho nesmí potřebovat."""
+        import importlib
+        import sys
+        ulozene = {k: sys.modules.get(k) for k in ("http.server", "socketserver", "nokturno_core.lib.remote_setup")}
+        try:
+            sys.modules["http.server"] = None
+            sys.modules["socketserver"] = None
+            sys.modules.pop("nokturno_core.lib.remote_setup", None)
+            rs = importlib.import_module("nokturno_core.lib.remote_setup")
+            self.assertEqual(rs.parse_order("a,b|c", {"a", "b", "c"}), [["a", "b"], ["c"]])
+        finally:
+            for k, v in ulozene.items():
+                if v is None:
+                    sys.modules.pop(k, None)
+                else:
+                    sys.modules[k] = v
+
 
 class TestOpravyZAuditu(unittest.TestCase):
     """Čtyři nálezy auditu 2026-09-14 — každý byl v ostrém provozu vidět jako pád,
