@@ -1599,6 +1599,17 @@ class TestPython38(unittest.TestCase):
                 # `dict | dict` a `list[str]` mimo anotace jdou poznat jen za běhu — hlídá CI s 3.8
         self.assertEqual(chyby, [])
 
+    def test_bez_modulu_secrets(self):
+        """Kodi 21.2 pro Android (pád 15dde7be7240) nemá v Pythonu `secrets`."""
+        chyby = []
+        for path in sorted(ROOT.glob("nokturno_core/**/*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                jmena = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+                    [node.module] if isinstance(node, ast.ImportFrom) else []
+                if "secrets" in jmena:
+                    chyby.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(chyby, [])
+
 
 class TestOpravyZAuditu(unittest.TestCase):
     """Čtyři nálezy auditu 2026-09-14 — každý byl v ostrém provozu vidět jako pád,
