@@ -616,7 +616,7 @@ tam je úložiště vlastní a velká knihovna se prochází jednou za hodinu.
 
 ## Pomoc
 
-Dotazy a rady: [facebooková skupina Nokturno](https://www.facebook.com/groups/nokturno). Chyby hlas v repozitáři klienta, kde se projevily:
+Dotazy a rady: [facebooková skupina Nokturno](https://www.facebook.com/groups/nokturno). Řešení častých potíží: [nápověda Nokturna](https://matata86.github.io/nokturno-napoveda/). Chyby hlas v repozitáři klienta, kde se projevily:
 [Kodi](https://github.com/matata86/plugin.video.nokturno/issues),
 [Home Assistant](https://github.com/matata86/nokturno-ha/issues),
 [Stremio](https://github.com/matata86/nokturno-stremio/issues).
