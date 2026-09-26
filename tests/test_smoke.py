@@ -682,6 +682,15 @@ class TestVypadekZdroje(unittest.TestCase):
             self.assertEqual([label for label, _e in failures], ["Luna"])
             self.assertEqual(summarize(failures), ["Luna neodpovídá"])
 
+    def test_titul_bez_imdb_id_hleda_jen_podle_nazvu(self):
+        """`tmdb:<id>` (nový seriál bez IMDb id): Luna ani Sosáč se neptají, fulltext ano."""
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = self._engine(tmp)
+            failures = []
+            found = engine.streams("movie", "tmdb:333454", failures=failures)
+            self.assertEqual(len(found), 1)
+            self.assertEqual(failures, [], "Luna se u titulu bez IMDb id vůbec nevolá")
+
     def test_vysledek_s_vypadkem_se_necachuje(self):
         """Jinak by po návratu Luny její streamy chyběly 72 hodin."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -2062,6 +2071,25 @@ class TestVykonJadra2(unittest.TestCase):
         self.assertEqual(meta["mpaa"], "TV-14")
         self.assertEqual(meta["voteCount"], 0)
         self.assertEqual(meta["trailerYoutubeId"], "")
+
+    def test_tmdb_meta_podle_tmdb_id(self):
+        from nokturno_core.lib.tmdb_api import TmdbApi, TmdbError
+        api = TmdbApi("k")
+
+        def get(path, **params):
+            if path == "/tv/333454":
+                return {"name": "Vraždy v dolinách", "original_name": "Vraždy v dolinách",
+                        "first_air_date": "2026-08-31", "seasons": [{"season_number": 1}], "images": {}}
+            if path == "/tv/333454/season/1":
+                return {"episodes": [{"episode_number": 1, "name": "1. epizoda"}]}
+            raise AssertionError(path)   # žádný /find – id z TMDB se nepřekládá
+        api._get = get
+        meta = api.meta("series", "tmdb:333454")
+        self.assertEqual((meta["id"], meta["imdb_id"], meta["_orig"], meta["year"]),
+                         ("tmdb:333454", "", "Vraždy v dolinách", "2026"))
+        self.assertEqual(meta["videos"][0]["id"], "tmdb:333454:1:1")
+        with self.assertRaises(TmdbError):
+            api.meta("series", "tmdb:../x")
 
     def test_tmdb_sezony_soubezne(self):
         from nokturno_core.lib.tmdb_api import TmdbApi
