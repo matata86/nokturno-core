@@ -206,6 +206,24 @@ class TestObsah(unittest.TestCase):
             self.assertEqual(self.api.similar("movie", "sosac:123"), [])
         self.assertIn("kind=movie&id=tt0133093", sit.volani[0])
 
+    def test_vlastni_katalog(self):
+        sit = Sit({"/discover": {"items": [{"id": "tt0167331", "name": "Pelíšky"}, {"id": "zlo"}], "pages": 40}})
+        with mock.patch.object(urllib.request, "urlopen", sit):
+            items, pages = self.api.discover("movie", {"with_genres": "35|18", "with_original_language": "cs",
+                                                       "year_from": 1990, "api_key": "cizi",
+                                                       "sort_by": "rm -rf"}, page=2)
+            self.api.discover("movie", {"with_original_language": "cs", "with_genres": "35|18",
+                                        "year_from": "1990"}, page=2)   # jiné pořadí = stejná cache
+        self.assertEqual(([i["id"] for i in items], pages), (["tt0167331"], 10))
+        self.assertEqual(len(sit.volani), 1)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(sit.volani[0]).query)
+        self.assertEqual(query, {"kind": ["movie"], "page": ["2"], "with_genres": ["35|18"],
+                                 "with_original_language": ["cs"], "year_from": ["1990"]})
+
+    def test_vlastni_katalog_vypadek(self):
+        with mock.patch.object(urllib.request, "urlopen", Sit({"/discover": urllib.error.URLError("x")})):
+            self.assertEqual(self.api.discover("series", {}, page=99), (None, 1))
+
     def test_tv_program(self):
         data = {"today": "2026-09-17", "date": "2026-09-17", "dates": ["2026-09-17", "zlo"],
                 "channels": [{"slug": "ct1", "name": "ČT1"}, {"slug": "../", "name": "x"}],
