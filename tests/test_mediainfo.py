@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from nokturno_core import Engine                    # noqa: E402
+from nokturno_core.engine import length_basis    # noqa: E402
 from nokturno_core.lib import mediainfo, streams    # noqa: E402
 
 
@@ -109,6 +110,20 @@ class TestParsery(unittest.TestCase):
             data = mkv_sample(stereo)
             with mock.patch.object(mediainfo, "fetch_sized", return_value=(data, len(data))):
                 self.assertEqual(bool(mediainfo.probe("http://x/film.mkv").get("stereo3d")), expected, stereo)
+
+    def test_mkv_jazyk_z_bcp47_a_vychozi_eng(self):
+        """MKVToolNix angličtinu do Language nezapisuje: anglická stopa má jen LanguageBCP47,
+        nebo nic (výchozí „eng"). Ukazovala se jako „5.1 EAC3" bez vlajky (2026-09-20)."""
+        def stopa(*jazyk):
+            return ebml(0xAE, ebml(0x83, b"\x02") + ebml(0x86, b"A_EAC3") + b"".join(jazyk)
+                        + ebml(0xE1, ebml(0x9F, b"\x06")))
+        stopy = (stopa(ebml(0x22B59C, b"cze"), ebml(0x22B59D, b"cs")), stopa(ebml(0x22B59D, b"en-US")), stopa(),
+                 stopa(ebml(0x22B59C, b"und"), ebml(0x22B59D, b"und")), stopa(ebml(0x22B59D, b"sk")))
+        data = ebml(0x1A45DFA3, b"\x42\x86\x81\x01") + ebml(0x18538067, ebml(0x1654AE6B, b"".join(stopy)))
+        with mock.patch.object(mediainfo, "fetch_sized", return_value=(data, len(data))):
+            audio = mediainfo.probe("http://x/film.mkv")["audio"]
+        self.assertEqual([t["lang"] for t in audio], ["CZ", "EN", "EN", "", "SK"])
+        self.assertEqual(audio[1], {"lang": "EN", "channels": "5.1", "codec": "EAC3"})
 
     def test_probe_pres_http_s_range(self):
         data = mkv_sample()
@@ -244,7 +259,35 @@ class TestRazeni(unittest.TestCase):
         out = streams.arrange(rows, hide_sd=True, max_size_gb=5.0, order="size_desc")
         self.assertEqual([r["url"] for r in out], ["maly"])
         out = streams.arrange(rows, hide_sd=True, max_size_gb=0.5, order="size_asc")
-        self.assertEqual([r["url"] for r in out], ["sd", "maly", "velky"], "když by filtr nic nenechal, vrátí vše")
+        self.assertEqual([r["url"] for r in out], ["maly", "velky"], "nad stropem vše, jen SD zůstane skryté")
+        out = streams.arrange(rows[:1], hide_sd=True, order="size_asc")
+        self.assertEqual([r["url"] for r in out], ["sd"], "samé SD: skrytí by nenechalo nic, zůstane")
+
+    def test_strop_toku_rozhoduje_tok_a_nad_stropem_nejmensi(self):
+        rows = [streams.parse_stream(self.s("2160p", "20 GB", "velky")), streams.parse_stream(self.s("1080p", "4 GB", "stredni")),
+                streams.parse_stream(self.s("720p", "2 GB", "maly"))]
+        rows[0]["bitrate"], rows[1]["bitrate"], rows[2]["bitrate"] = 20.0, 11.0, 4.0
+        out = streams.arrange(rows, max_bitrate=10, max_size_gb=50, order="size_desc")
+        self.assertEqual([r["url"] for r in out], ["maly"], "známý tok přebije odhad z velikosti")
+        rows[2]["bitrate"] = 12.0
+        self.assertEqual([r["url"] for r in streams.arrange(rows, max_bitrate=10)], ["velky", "stredni", "maly"],
+                         "předběžné řazení nad stropem nechá všechno")
+        self.assertEqual([r["url"] for r in streams.arrange(rows, max_bitrate=10, keep_smallest=True)], ["maly"],
+                         "nad stropem jen nejmenší soubor (titul jen ve 4K)")
+
+    def test_strop_u_dilu_ze_stopaze_serialu(self):
+        """TMDB u dílu stopáž nedává — dřív se počítal dvouhodinový film a strop u dílu
+        propouštěl víc než dvojnásobný tok (Reacher S03E01: 15 z 31 streamů nad 5 Mb/s)."""
+        meta, video = {"runtime": "49 min"}, {"id": "tt9288030:3:1", "season": 3, "episode": 1}
+        basis = length_basis(meta, video)
+        self.assertEqual((basis["runtime"], basis["id"]), ("49 min", "tt9288030:3:1"))
+        self.assertIs(length_basis(meta, dict(video, runtime=42)).get("runtime"), 42, "vlastní stopáž dílu má přednost")
+        self.assertIs(length_basis(meta, None), meta)
+        engine = Engine({"max_bitrate_mbps": "5"}, tempfile.mkdtemp())
+        rows = [streams.parse_stream(self.s("1080p", "2.2 GB", "nad")), streams.parse_stream(self.s("1080p", "1.2 GB", "pod"))]
+        out = engine._finish(engine._sorter(basis), rows, basis)
+        self.assertEqual([r["url"] for r in out], ["pod"])
+        self.assertEqual(out[0]["bitrate"], 3.5)
 
     def test_skryt_3d(self):
         rows = [self.s("Avatar.2009.1080p.3D.HSBS.CZ.mkv", "8 GB", "sbs"), self.s("Avatar.2009.1080p.CZ.mkv", "8 GB", "2d"),
