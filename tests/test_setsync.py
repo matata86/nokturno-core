@@ -52,9 +52,15 @@ class TestRozdeleni(unittest.TestCase):
         self.assertEqual(setsync.circle_of("pref_lang"), "settings")
         self.assertEqual(setsync.circle_of("stream_layout"), "settings")
 
+    def test_prehrajto_je_ucet(self):
+        # heslo Přehraj.to šlo do 8.4.0~beta16 okruhem nastavení, tedy i s vypnutými účty
+        self.assertEqual(setsync.circle_of("pt_email"), "accounts")
+        self.assertEqual(setsync.circle_of("pt_password"), "accounts")
+        self.assertEqual(setsync.circle_of("pt_enabled"), "settings")
+
     def test_vlastni_nastaveni_synchronizace_se_nesdili(self):
         for klic in ("sync_enabled", "sync_mode", "sync_code", "sync_watched",
-                     "sync_settings", "sync_accounts", "download_dir", "install_id"):
+                     "sync_settings", "sync_accounts", "sync_watchlist", "download_dir", "install_id"):
             self.assertIsNone(setsync.circle_of(klic), klic)
 
 
